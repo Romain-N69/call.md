@@ -4,6 +4,12 @@ const BASE_URL = 'https://llm.synapse.thalescloud.io/v1';
 const TRANSCRIPTION_MODEL = 'whisper-1@v2-large';
 const CHAT_MODEL = 'gpt-4o@2024-11-20';
 
+async function validateKey(apiKey) {
+  const response = await fetch(`${BASE_URL}/models`, { headers: { Authorization: `Bearer ${apiKey}` } });
+  if (!response.ok) throw new Error(`Synapse rejected this key (${response.status})`);
+  return true;
+}
+
 async function transcribe(path, apiKey) {
   const form = new FormData();
   form.append('model', TRANSCRIPTION_MODEL);
@@ -40,4 +46,4 @@ async function summarize(transcript, apiKey) {
   return JSON.parse((await response.json()).choices[0].message.content);
 }
 
-module.exports = { transcribe, summarize, BASE_URL, TRANSCRIPTION_MODEL, CHAT_MODEL };
+module.exports = { validateKey, transcribe, summarize, BASE_URL, TRANSCRIPTION_MODEL, CHAT_MODEL };

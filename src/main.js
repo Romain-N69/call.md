@@ -2,6 +2,7 @@ const { app, BrowserWindow, desktopCapturer, ipcMain, safeStorage, session, shel
 const { randomUUID } = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
+const { displayStreams } = require('./capture');
 const { openDatabase } = require('./database');
 const { markdown } = require('./insights');
 const synapse = require('./synapse');
@@ -42,9 +43,9 @@ app.whenReady().then(async () => {
   db = openDatabase(path.join(app.getPath('userData'), 'meetings.db'));
 
   session.defaultSession.setDisplayMediaRequestHandler(async (_request, callback) => {
-    const sources = await desktopCapturer.getSources({ types: ['screen'] });
-    callback({ video: sources[0], audio: 'loopback' });
-  }, { useSystemPicker: true });
+    try { callback(await displayStreams(desktopCapturer)); }
+    catch (error) { console.error(error); callback({}); }
+  });
 
   await createWindow();
 });
@@ -52,8 +53,13 @@ app.whenReady().then(async () => {
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
 app.on('before-quit', () => db?.close());
 
-ipcMain.handle('config:get', () => ({ configured: Boolean(getKey()), baseUrl: synapse.BASE_URL, chatModel: synapse.CHAT_MODEL, transcriptionModel: synapse.TRANSCRIPTION_MODEL }));
-ipcMain.handle('config:save-key', (_event, key) => { saveKey(key); return true; });
+ipcMain.handle('config:get', () => ({ configured: Boolean(getKey()), source: process.env.THALES_SYNAPSE_SYNAPSE_LLM_KEY ? 'environment' : fs.existsSync(keyPath()) ? 'keychain' : null, baseUrl: synapse.BASE_URL, chatModel: synapse.CHAT_MODEL, transcriptionModel: synapse.TRANSCRIPTION_MODEL }));
+ipcMain.handle('config:save-key', async (_event, key) => {
+  await synapse.validateKey(key);
+  saveKey(key);
+  return { configured: true, source: 'keychain' };
+});
+ipcMain.handle('config:test', () => synapse.validateKey(getKey()));
 ipcMain.handle('permissions:get', () => ({
   microphone: process.platform !== 'darwin' || systemPreferences.getMediaAccessStatus('microphone') === 'granted',
   screen: process.platform !== 'darwin' || systemPreferences.getMediaAccessStatus('screen') === 'granted',
