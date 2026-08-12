@@ -20,12 +20,13 @@
     "appId": "com.thales.synapse-call-local",
     "productName": "Synapse Call Local",
     "asar": true,
+    "afterPack": "scripts/after-pack.js",
     "asarUnpack": ["node_modules/better-sqlite3/build/**"],
     "files": ["src/**/*", "package.json", "node_modules/**/*"],
     "mac": {
       "target": [{"target": "dmg", "arch": ["arm64"]}],
       "category": "public.app-category.productivity",
-      "hardenedRuntime": true,
+      "hardenedRuntime": false,
       "entitlements": "build/entitlements.mac.plist",
       "entitlementsInherit": "build/entitlements.mac.plist",
       "extendInfo": {
