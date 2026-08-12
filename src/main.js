@@ -6,6 +6,7 @@ const { openDatabase } = require('./database');
 const keychain = require('./keychain');
 const { startSystemAudio } = require('./system-audio');
 const { markdown } = require('./insights');
+const { finalizeVideo, isSystemAudioLeak, nearestSystemChunk, suppressCrosstalk } = require('./media');
 const { cleanSegments, parakeetState, parakeetTranscribe, whisperTranscribe, modelState, selectedModel, MODELS } = require('./transcription');
 const synapse = require('./synapse');
 
@@ -49,10 +50,10 @@ function saveKey(key) { keychain.set(app, key); }
 
 async function createWindow() {
   window = new BrowserWindow({
-    width: 1260,
-    height: 820,
-    minWidth: 880,
-    minHeight: 620,
+    width: 1080,
+    height: 720,
+    minWidth: 760,
+    minHeight: 560,
     titleBarStyle: 'hiddenInset',
     trafficLightPosition: { x: 18, y: 18 },
     backgroundColor: '#dce8ec',
@@ -151,10 +152,14 @@ ipcMain.handle('meeting:segment', async (_event, { channel, bytes, startedAt }) 
   const meeting = activeMeeting;
   track((async () => {
     try {
+      const transcriptChannel = channel === 'mic' ? 'me' : 'them';
+      if (transcriptChannel === 'me' && await isSystemAudioLeak(file, nearestSystemChunk(meeting.folder, startedAt))) return;
       const segments = await transcribe(file, meeting.language);
       const offset = (startedAt - meeting.startedAt) / 1000;
-      db.addSegments(meeting.id, channel === 'mic' ? 'me' : 'them', offset, segments);
-      window.webContents.send('meeting:transcript', db.getTranscript(meeting.id));
+      db.addSegments(meeting.id, transcriptChannel, offset, segments);
+      const transcript = suppressCrosstalk(db.getTranscript(meeting.id));
+      db.replaceTranscript(meeting.id, transcript);
+      window.webContents.send('meeting:transcript', transcript);
     } catch (error) { window.webContents.send('meeting:error', error.message); }
   })());
   return true;
@@ -168,7 +173,11 @@ ipcMain.handle('meeting:stop', async () => {
   await new Promise(resolve => setTimeout(resolve, 1200));
   progress('Finalisation de la transcription', 55, pendingTranscriptions.size ? `${pendingTranscriptions.size} segment${pendingTranscriptions.size === 1 ? '' : 's'} audio encore en cours…` : 'Tous les segments audio sont prêts.');
   await Promise.allSettled([...pendingTranscriptions]);
+  progress('Finalisation de la vidéo', 70, 'Création d’un fichier vidéo continu et lisible…');
+  try { await finalizeVideo(path.join(meeting.folder, 'screen-full.webm')); }
+  catch (error) { console.error('Video finalization failed:', error); }
   db.finishMeeting(meeting.id, Date.now());
+  db.replaceTranscript(meeting.id, suppressCrosstalk(db.getTranscript(meeting.id)));
   const transcript = db.getTranscript(meeting.id);
   let summary = null;
   try {
@@ -203,11 +212,13 @@ ipcMain.handle('meeting:retranscribe', async (_event, id, language = 'auto') => 
     const match = file.match(/^(mic|system(?:_audio)?)-(\d+)/);
     if (!match) continue;
     const startedAt = Number(match[2]), channel = match[1] === 'mic' ? 'me' : 'them';
-    const transcript = await transcribe(path.join(meeting.folder, file), language);
+    const source = path.join(meeting.folder, file);
+    if (channel === 'me' && await isSystemAudioLeak(source, nearestSystemChunk(meeting.folder, startedAt))) continue;
+    const transcript = await transcribe(source, language);
     const offset = Math.max(0, (startedAt - meeting.started_at) / 1000);
     transcript.forEach(item => segments.push({ channel, start_time: offset + Number(item.start || 0), end_time: offset + Number(item.end || item.start || 0), text: item.text || '' }));
   }
-  db.replaceTranscript(id, segments.sort((a, b) => a.start_time - b.start_time));
+  db.replaceTranscript(id, suppressCrosstalk(segments.sort((a, b) => a.start_time - b.start_time)));
   const transcript = db.getTranscript(id);
   const summary = await synapse.summarize(transcript, getKey());
   db.saveSummary(id, summary);
