@@ -10,10 +10,13 @@ async function validateKey(apiKey) {
   return true;
 }
 
-async function transcribe(path, apiKey) {
+async function transcribe(path, apiKey, options = {}) {
   const form = new FormData();
   form.append('model', TRANSCRIPTION_MODEL);
   form.append('response_format', 'verbose_json');
+  if (options.language && options.language !== 'auto') form.append('language', options.language);
+  if (options.prompt) form.append('prompt', options.prompt);
+  form.append('temperature', '0');
   form.append('file', new Blob([fs.readFileSync(path)]), path.split('/').pop());
   const response = await fetch(`${BASE_URL}/audio/transcriptions`, {
     method: 'POST',

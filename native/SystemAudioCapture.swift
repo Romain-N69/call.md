@@ -50,7 +50,7 @@ final class AudioCapture: NSObject, SCStreamOutput {
         let timestamp = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
         if captureStart == nil { captureStart = timestamp }
         if writer == nil { startWriter(at: timestamp) }
-        if let start = segmentStart, CMTimeGetSeconds(timestamp - start) >= 8 {
+        if let start = segmentStart, CMTimeGetSeconds(timestamp - start) >= 20 {
             finishWriterSync()
             startWriter(at: timestamp)
         }

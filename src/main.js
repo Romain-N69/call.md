@@ -1,10 +1,11 @@
-const { app, BrowserWindow, ipcMain, safeStorage, shell, systemPreferences } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain, safeStorage, shell, systemPreferences } = require('electron');
 const { randomUUID } = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
 const { openDatabase } = require('./database');
 const { startSystemAudio } = require('./system-audio');
 const { markdown } = require('./insights');
+const { cleanSegments, localTranscribe, modelState, MODELS } = require('./transcription');
 const synapse = require('./synapse');
 
 let window;
@@ -13,6 +14,18 @@ let activeMeeting;
 let systemAudio;
 const keyPath = () => path.join(app.getPath('userData'), 'synapse-key.bin');
 const recordingsRoot = () => path.join(app.getPath('userData'), 'recordings');
+const modelsRoot = () => path.join(app.getPath('userData'), 'models');
+const preferencesPath = () => path.join(app.getPath('userData'), 'preferences.json');
+function preferences() { try { return JSON.parse(fs.readFileSync(preferencesPath(), 'utf8')); } catch { return { engine: 'synapse', model: 'small', language: 'fr' }; } }
+function savePreferences(value) { fs.writeFileSync(preferencesPath(), JSON.stringify(value)); return value; }
+async function transcribe(file) {
+  const config = preferences();
+  if (config.engine === 'local') {
+    const model = MODELS[config.model] || MODELS.small;
+    return localTranscribe(file, { modelPath: path.join(modelsRoot(), model.file), language: config.language });
+  }
+  return cleanSegments(await synapse.transcribe(file, getKey(), { language: config.language, prompt: config.language === 'fr' ? 'Conversation en français. Noms propres, termes professionnels et phrases naturelles.' : '' }));
+}
 
 function getKey() {
   if (fs.existsSync(keyPath()) && safeStorage.isEncryptionAvailable()) return safeStorage.decryptString(fs.readFileSync(keyPath()));
@@ -40,6 +53,7 @@ async function createWindow() {
 
 app.whenReady().then(async () => {
   fs.mkdirSync(recordingsRoot(), { recursive: true });
+  fs.mkdirSync(modelsRoot(), { recursive: true });
   db = openDatabase(path.join(app.getPath('userData'), 'meetings.db'));
 
   await createWindow();
@@ -55,6 +69,20 @@ ipcMain.handle('config:save-key', async (_event, key) => {
   return { configured: true, source: 'keychain' };
 });
 ipcMain.handle('config:test', () => synapse.validateKey(getKey()));
+ipcMain.handle('transcription:get', () => ({ preferences: preferences(), models: modelState(modelsRoot()) }));
+ipcMain.handle('transcription:save', (_event, value) => savePreferences(value));
+ipcMain.handle('transcription:download', async (_event, modelId) => {
+  const model = MODELS[modelId];
+  if (!model) throw new Error('Unknown local model');
+  const destination = path.join(modelsRoot(), model.file);
+  const { response } = await dialog.showMessageBox(window, { type: 'question', buttons: ['Download', 'Cancel'], defaultId: 0, cancelId: 1, title: model.label, message: `Download ${model.label}?`, detail: `${model.detail}. The model is stored locally and may require several GB.` });
+  if (response !== 0) return false;
+  const download = await fetch(model.url);
+  if (!download.ok) throw new Error(`Model download failed (${download.status})`);
+  fs.writeFileSync(destination, Buffer.from(await download.arrayBuffer()));
+  await dialog.showMessageBox(window, { type: 'info', message: `${model.label} is ready`, detail: 'Transcription can now run locally on this Mac.' });
+  return true;
+});
 ipcMain.handle('permissions:get', () => ({
   microphone: process.platform !== 'darwin' || systemPreferences.getMediaAccessStatus('microphone') === 'granted',
   screen: process.platform !== 'darwin' || systemPreferences.getMediaAccessStatus('screen') === 'granted',
@@ -76,7 +104,7 @@ ipcMain.handle('meeting:start', async (_event, title) => {
     app, folder, startedAt: activeMeeting.startedAt,
     onSegment: async segment => {
       try {
-        const segments = await synapse.transcribe(segment.path, getKey());
+        const segments = await transcribe(segment.path);
         db.addSegments(activeMeeting.id, 'them', (segment.startedAt - activeMeeting.startedAt) / 1000, segments);
         window.webContents.send('meeting:transcript', db.getTranscript(activeMeeting.id));
       } catch (error) { window.webContents.send('meeting:error', error.message); }
@@ -91,7 +119,7 @@ ipcMain.handle('meeting:segment', async (_event, { channel, bytes, startedAt }) 
   if (!activeMeeting) throw new Error('No active meeting');
   const file = path.join(activeMeeting.folder, `${channel}-${startedAt}.webm`);
   fs.writeFileSync(file, Buffer.from(bytes));
-  const segments = await synapse.transcribe(file, getKey());
+  const segments = await transcribe(file);
   const offset = (startedAt - activeMeeting.startedAt) / 1000;
   db.addSegments(activeMeeting.id, channel === 'mic' ? 'me' : 'them', offset, segments);
   window.webContents.send('meeting:transcript', db.getTranscript(activeMeeting.id));

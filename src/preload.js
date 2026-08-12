@@ -6,6 +6,11 @@ contextBridge.exposeInMainWorld('callLocal', {
     saveKey: key => ipcRenderer.invoke('config:save-key', key),
     test: () => ipcRenderer.invoke('config:test'),
   },
+  transcription: {
+    get: () => ipcRenderer.invoke('transcription:get'),
+    save: value => ipcRenderer.invoke('transcription:save', value),
+    download: model => ipcRenderer.invoke('transcription:download', model),
+  },
   permissions: {
     get: () => ipcRenderer.invoke('permissions:get'),
     microphone: () => ipcRenderer.invoke('permissions:microphone'),

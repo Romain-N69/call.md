@@ -3,7 +3,7 @@ const $ = id => document.getElementById(id);
 let streams = [], recorders = [], segmentTimers = [], currentTranscript = [];
 let recording = false, startedAt = 0, activeMeetingId, timer, searchTimer;
 let sending = Promise.resolve();
-const segmentMs = 8000;
+const segmentMs = 20000;
 
 function error(message = '') { $('error').textContent = message; }
 function formatTime(seconds) { const n=Math.max(0,Math.floor(Number(seconds)||0)); return `${String(Math.floor(n/60)).padStart(2,'0')}:${String(n%60).padStart(2,'0')}`; }
@@ -38,6 +38,7 @@ function meter(stream, element) {
 }
 async function refreshPermissions() { const state=await api.permissions.get(); [['micStatus',state.microphone],['screenStatus',state.screen]].forEach(([id,ok])=>{ $(id).classList.toggle('granted',ok); $(id).textContent=id==='micStatus'?`Microphone · ${ok?'ready':'needed'}`:`System audio · ${ok?'ready':'needed'}`; }); }
 async function refreshKeyStatus(message) { const config=await api.config.get(); $('keyStatus').className=`connection-status ${config.configured?'ok':'bad'}`; $('keyStatus').textContent=message||(config.configured?`Synapse key active · ${config.source==='keychain'?'macOS Keychain':'environment variable'}`:'No Synapse key configured'); $('models').textContent=`${config.baseUrl} · ${config.transcriptionModel} · ${config.chatModel}`; }
+async function refreshTranscription() { const state=await api.transcription.get(), prefs=state.preferences; $('language').value=prefs.language; document.querySelector(`input[name="engine"][value="${prefs.engine}"]`).checked=true; $('localModels').innerHTML=Object.entries(state.models).map(([id,m])=>`<label class="model-option"><input type="radio" name="localModel" value="${id}" ${prefs.model===id?'checked':''}><span><strong>${m.label}</strong><span>${m.detail}</span></span>${m.installed?'<b>Ready</b>':`<button type="button" data-download="${id}">Download</button>`}</label>`).join(''); document.querySelectorAll('[data-download]').forEach(button=>button.onclick=async event=>{ event.preventDefault(); button.disabled=true; button.textContent='Downloading…'; try{ await api.transcription.download(button.dataset.download); await refreshTranscription(); }catch(e){ alert(e.message); button.disabled=false; button.textContent='Download'; } }); }
 async function start() {
   error();
   try {
@@ -79,7 +80,8 @@ document.querySelectorAll('.tab').forEach(tab=>tab.onclick=()=>showView(tab.data
 $('micPermission').onclick=async()=>{ await api.permissions.microphone(); refreshPermissions(); }; $('screenPermission').onclick=async()=>{ await api.permissions.screen(); refreshPermissions(); };
 $('saveKey').onclick=async()=>{ if(!$('key').value)return; try{ $('keyStatus').textContent='Validating with Synapse…'; await api.config.saveKey($('key').value); $('key').value=''; await refreshKeyStatus('Synapse key validated and active · macOS Keychain'); }catch(e){ $('keyStatus').className='connection-status bad'; $('keyStatus').textContent=e.message; } };
 $('testKey').onclick=async()=>{ try{ $('keyStatus').textContent='Testing saved key…'; await api.config.test(); await refreshKeyStatus('Synapse connection successful · saved key is active'); }catch(e){ $('keyStatus').className='connection-status bad'; $('keyStatus').textContent=e.message; } };
+$('saveTranscription').onclick=async()=>{ const engine=document.querySelector('input[name="engine"]:checked').value, model=document.querySelector('input[name="localModel"]:checked').value; const state=await api.transcription.get(); if(engine==='local'&&!state.models[model].installed)return alert('Download the selected local model first.'); await api.transcription.save({engine,model,language:$('language').value}); $('saveTranscription').textContent='Settings saved'; };
 $('start').onclick=start; $('stop').onclick=stop; $('bookmarkLive').onclick=bookmarkLive;
 $('search').oninput=()=>{ clearTimeout(searchTimer); searchTimer=setTimeout(loadHistory,180); };
 api.meeting.onTranscript(renderTranscript); api.meeting.onError(error);
-refreshKeyStatus(); refreshPermissions(); loadHistory();
+refreshKeyStatus(); refreshTranscription(); refreshPermissions(); loadHistory();
