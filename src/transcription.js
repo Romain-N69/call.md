@@ -19,7 +19,7 @@ function cleanSegments(segments) {
   }).map(segment => ({ start: Number(segment.start || segment.offsets?.from || 0) / (segment.offsets ? 1000 : 1), end: Number(segment.end || segment.offsets?.to || 0) / (segment.offsets ? 1000 : 1), text: String(segment.text).trim() }));
 }
 
-async function localTranscribe(input, { modelPath, language = 'fr', whisperBinary = '/opt/homebrew/bin/whisper-cli', ffmpegBinary = '/opt/homebrew/bin/ffmpeg' }) {
+async function localTranscribe(input, { modelPath, language = 'auto', whisperBinary = '/opt/homebrew/bin/whisper-cli', ffmpegBinary = '/opt/homebrew/bin/ffmpeg' }) {
   const wav = `${input}.wav`, output = `${input}.whisper`;
   try {
     await exec(ffmpegBinary, ['-y', '-i', input, '-ar', '16000', '-ac', '1', '-af', 'highpass=f=100,lowpass=f=7500', wav]);

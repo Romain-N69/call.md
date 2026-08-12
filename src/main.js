@@ -16,7 +16,7 @@ const keyPath = () => path.join(app.getPath('userData'), 'synapse-key.bin');
 const recordingsRoot = () => path.join(app.getPath('userData'), 'recordings');
 const modelsRoot = () => path.join(app.getPath('userData'), 'models');
 const preferencesPath = () => path.join(app.getPath('userData'), 'preferences.json');
-function preferences() { try { return JSON.parse(fs.readFileSync(preferencesPath(), 'utf8')); } catch { return { engine: 'synapse', model: 'small', language: 'fr' }; } }
+function preferences() { try { return JSON.parse(fs.readFileSync(preferencesPath(), 'utf8')); } catch { return { engine: 'synapse', model: 'small', language: 'auto' }; } }
 function savePreferences(value) { fs.writeFileSync(preferencesPath(), JSON.stringify(value)); return value; }
 async function transcribe(file) {
   const config = preferences();
@@ -24,7 +24,7 @@ async function transcribe(file) {
     const model = MODELS[config.model] || MODELS.small;
     return localTranscribe(file, { modelPath: path.join(modelsRoot(), model.file), language: config.language });
   }
-  return cleanSegments(await synapse.transcribe(file, getKey(), { language: config.language, prompt: config.language === 'fr' ? 'Conversation en français. Noms propres, termes professionnels et phrases naturelles.' : '' }));
+  return cleanSegments(await synapse.transcribe(file, getKey(), { language: config.language }));
 }
 
 function getKey() {
