@@ -20,7 +20,7 @@ function preferences() { try { return JSON.parse(fs.readFileSync(preferencesPath
 function savePreferences(value) { fs.writeFileSync(preferencesPath(), JSON.stringify(value)); return value; }
 function configuredModelsRoot() { return preferences().modelsPath || modelsRoot(); }
 async function transcribe(file) {
-  const config = preferences();
+  const config = { ...preferences(), language: activeMeeting?.language || 'auto' };
   const provider = config.provider || config.engine || 'synapse';
   const recognitionEngine = config.recognitionEngine || 'whisper';
   if (provider === 'local') {
@@ -104,12 +104,12 @@ ipcMain.handle('permissions:screen', async () => {
   await shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture');
   return false;
 });
-ipcMain.handle('meeting:start', async (_event, title) => {
+ipcMain.handle('meeting:start', async (_event, { title, language }) => {
   if (activeMeeting) throw new Error('A meeting is already recording');
   const id = randomUUID();
   const folder = path.join(recordingsRoot(), id);
   fs.mkdirSync(folder, { recursive: true });
-  activeMeeting = { id, title: title || 'Untitled meeting', folder, startedAt: Date.now() };
+  activeMeeting = { id, title: title || 'Untitled meeting', folder, startedAt: Date.now(), language: language || 'auto' };
   db.startMeeting(activeMeeting);
   systemAudio = startSystemAudio({
     app, folder, startedAt: activeMeeting.startedAt,

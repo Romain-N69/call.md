@@ -18,7 +18,7 @@ contextBridge.exposeInMainWorld('callLocal', {
     screen: () => ipcRenderer.invoke('permissions:screen'),
   },
   meeting: {
-    start: title => ipcRenderer.invoke('meeting:start', title),
+    start: options => ipcRenderer.invoke('meeting:start', options),
     sendSegment: payload => ipcRenderer.invoke('meeting:segment', payload),
     stop: () => ipcRenderer.invoke('meeting:stop'),
     list: query => ipcRenderer.invoke('meeting:list', query),
