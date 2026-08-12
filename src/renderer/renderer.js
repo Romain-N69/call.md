@@ -43,9 +43,8 @@ async function start() {
   try {
     const config=await api.config.get(); if(!config.configured)throw new Error('Open Settings and save your Synapse key first.');
     const mic=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true},video:false});
-    const display=await navigator.mediaDevices.getDisplayMedia({video:true,audio:true}); const systemTracks=display.getAudioTracks(); if(!systemTracks.length)throw new Error('System audio capture did not start. Quit and reopen the app after granting Screen & System Audio Recording.');
-    const system=new MediaStream(systemTracks); streams=[mic,display,system]; const meeting=await api.meeting.start($('title').value.trim()); activeMeetingId=meeting.id; startedAt=meeting.startedAt; recording=true;
-    createRecorder(mic,'mic'); createRecorder(system,'system_audio'); meter(mic,$('micMeter')); meter(system,$('systemMeter')); $('setup').hidden=true; $('live').hidden=false;
+    streams=[mic]; const meeting=await api.meeting.start($('title').value.trim()); activeMeetingId=meeting.id; startedAt=meeting.startedAt; recording=true;
+    createRecorder(mic,'mic'); meter(mic,$('micMeter')); $('systemMeter').style.width='100%'; $('setup').hidden=true; $('live').hidden=false;
     timer=setInterval(()=>$('clock').textContent=formatTime((Date.now()-startedAt)/1000),1000);
   } catch(e) { streams.forEach(s=>s.getTracks().forEach(t=>t.stop())); streams=[]; error(e.message); }
 }
@@ -82,5 +81,5 @@ $('saveKey').onclick=async()=>{ if(!$('key').value)return; try{ $('keyStatus').t
 $('testKey').onclick=async()=>{ try{ $('keyStatus').textContent='Testing saved key…'; await api.config.test(); await refreshKeyStatus('Synapse connection successful · saved key is active'); }catch(e){ $('keyStatus').className='connection-status bad'; $('keyStatus').textContent=e.message; } };
 $('start').onclick=start; $('stop').onclick=stop; $('bookmarkLive').onclick=bookmarkLive;
 $('search').oninput=()=>{ clearTimeout(searchTimer); searchTimer=setTimeout(loadHistory,180); };
-api.meeting.onTranscript(renderTranscript);
+api.meeting.onTranscript(renderTranscript); api.meeting.onError(error);
 refreshKeyStatus(); refreshPermissions(); loadHistory();

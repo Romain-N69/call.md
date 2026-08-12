@@ -1,15 +1,16 @@
-const { app, BrowserWindow, desktopCapturer, ipcMain, safeStorage, session, shell, systemPreferences } = require('electron');
+const { app, BrowserWindow, ipcMain, safeStorage, shell, systemPreferences } = require('electron');
 const { randomUUID } = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
-const { displayStreams } = require('./capture');
 const { openDatabase } = require('./database');
+const { startSystemAudio } = require('./system-audio');
 const { markdown } = require('./insights');
 const synapse = require('./synapse');
 
 let window;
 let db;
 let activeMeeting;
+let systemAudio;
 const keyPath = () => path.join(app.getPath('userData'), 'synapse-key.bin');
 const recordingsRoot = () => path.join(app.getPath('userData'), 'recordings');
 
@@ -41,11 +42,6 @@ app.whenReady().then(async () => {
   fs.mkdirSync(recordingsRoot(), { recursive: true });
   db = openDatabase(path.join(app.getPath('userData'), 'meetings.db'));
 
-  session.defaultSession.setDisplayMediaRequestHandler(async (_request, callback) => {
-    try { callback(await displayStreams(desktopCapturer)); }
-    catch (error) { console.error(error); callback({}); }
-  });
-
   await createWindow();
 });
 
@@ -69,13 +65,26 @@ ipcMain.handle('permissions:screen', async () => {
   await shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture');
   return false;
 });
-ipcMain.handle('meeting:start', (_event, title) => {
+ipcMain.handle('meeting:start', async (_event, title) => {
   if (activeMeeting) throw new Error('A meeting is already recording');
   const id = randomUUID();
   const folder = path.join(recordingsRoot(), id);
   fs.mkdirSync(folder, { recursive: true });
   activeMeeting = { id, title: title || 'Untitled meeting', folder, startedAt: Date.now() };
   db.startMeeting(activeMeeting);
+  systemAudio = startSystemAudio({
+    app, folder, startedAt: activeMeeting.startedAt,
+    onSegment: async segment => {
+      try {
+        const segments = await synapse.transcribe(segment.path, getKey());
+        db.addSegments(activeMeeting.id, 'them', (segment.startedAt - activeMeeting.startedAt) / 1000, segments);
+        window.webContents.send('meeting:transcript', db.getTranscript(activeMeeting.id));
+      } catch (error) { window.webContents.send('meeting:error', error.message); }
+    },
+    onError: message => window.webContents.send('meeting:error', message),
+  });
+  try { await systemAudio.ready; }
+  catch (error) { systemAudio.stop(); systemAudio = null; db.deleteMeeting(activeMeeting.id); activeMeeting = null; throw error; }
   return activeMeeting;
 });
 ipcMain.handle('meeting:segment', async (_event, { channel, bytes, startedAt }) => {
@@ -91,6 +100,8 @@ ipcMain.handle('meeting:segment', async (_event, { channel, bytes, startedAt }) 
 ipcMain.handle('meeting:stop', async () => {
   if (!activeMeeting) return null;
   const meeting = activeMeeting;
+  systemAudio?.stop(); systemAudio = null;
+  await new Promise(resolve => setTimeout(resolve, 1000));
   db.finishMeeting(meeting.id, Date.now());
   const transcript = db.getTranscript(meeting.id);
   let summary = null;
