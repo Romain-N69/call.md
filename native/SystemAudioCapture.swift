@@ -13,6 +13,8 @@ final class AudioCapture: NSObject, SCStreamOutput {
     private var captureStart: CMTime?
     private var segmentStart: CMTime?
     private var segmentURL: URL?
+    private var segmentPeakDb: Float = -160
+    private var lastLevelEmission = Date.distantPast
     private var stopping = false
 
     init(folder: URL, startedAt: Int64) {
@@ -49,8 +51,9 @@ final class AudioCapture: NSObject, SCStreamOutput {
         guard type == .audio, sampleBuffer.isValid, CMSampleBufferDataIsReady(sampleBuffer) else { return }
         let timestamp = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
         if captureStart == nil { captureStart = timestamp }
+        updateLevel(sampleBuffer)
         if writer == nil { startWriter(at: timestamp) }
-        if let start = segmentStart, CMTimeGetSeconds(timestamp - start) >= 20 {
+        if let start = segmentStart, CMTimeGetSeconds(timestamp - start) >= 5 {
             finishWriterSync()
             startWriter(at: timestamp)
         }
@@ -78,6 +81,7 @@ final class AudioCapture: NSObject, SCStreamOutput {
             self.input = input
             segmentStart = timestamp
             segmentURL = url
+            segmentPeakDb = -160
         } catch { emit(["error": error.localizedDescription]) }
     }
 
@@ -89,7 +93,7 @@ final class AudioCapture: NSObject, SCStreamOutput {
         writer.finishWriting {
             if writer.status == .completed {
                 let offset = Int64(CMTimeGetSeconds(start - (self.captureStart ?? start)) * 1000)
-                self.emit(["path": url.path, "startedAt": self.startedAt + max(0, offset)])
+                self.emit(["path": url.path, "startedAt": self.startedAt + max(0, offset), "peakDb": self.segmentPeakDb])
             } else if let error = writer.error { self.emit(["error": error.localizedDescription]) }
             semaphore.signal()
         }
@@ -97,6 +101,23 @@ final class AudioCapture: NSObject, SCStreamOutput {
     }
 
     private func finishWriter() async { queue.sync { finishWriterSync() } }
+
+    private func updateLevel(_ sampleBuffer: CMSampleBuffer) {
+        var list = AudioBufferList(mNumberBuffers: 1, mBuffers: AudioBuffer(mNumberChannels: 1, mDataByteSize: 0, mData: nil))
+        var blockBuffer: CMBlockBuffer?
+        let status = CMSampleBufferGetAudioBufferListWithRetainedBlockBuffer(sampleBuffer, bufferListSizeNeededOut: nil, bufferListOut: &list, bufferListSize: MemoryLayout<AudioBufferList>.size, blockBufferAllocator: kCFAllocatorDefault, blockBufferMemoryAllocator: kCFAllocatorDefault, flags: 0, blockBufferOut: &blockBuffer)
+        guard status == noErr, let data = list.mBuffers.mData else { return }
+        let count = Int(list.mBuffers.mDataByteSize) / MemoryLayout<Float>.size
+        guard count > 0 else { return }
+        let samples = data.assumingMemoryBound(to: Float.self)
+        var sum: Float = 0
+        for index in 0..<count { sum += samples[index] * samples[index] }
+        let db = 20 * log10(max(sqrt(sum / Float(count)), 0.00000001))
+        segmentPeakDb = max(segmentPeakDb, db)
+        if Date().timeIntervalSince(lastLevelEmission) >= 0.1 {
+            emit(["levelDb": db]); lastLevelEmission = Date()
+        }
+    }
 
     private func emit(_ value: [String: Any]) {
         guard let data = try? JSONSerialization.data(withJSONObject: value), let line = String(data: data, encoding: .utf8) else { return }

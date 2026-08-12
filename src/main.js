@@ -13,6 +13,7 @@ let window;
 let db;
 let activeMeeting;
 let systemAudio;
+let pendingTranscriptions = new Set();
 const recordingsRoot = () => path.join(app.getPath('userData'), 'recordings');
 const modelsRoot = () => path.join(app.getPath('userData'), 'models');
 const preferencesPath = () => path.join(app.getPath('userData'), 'preferences.json');
@@ -20,6 +21,7 @@ function preferences() { try { return JSON.parse(fs.readFileSync(preferencesPath
 function savePreferences(value) { fs.writeFileSync(preferencesPath(), JSON.stringify(value)); return value; }
 function configuredModelsRoot() { return preferences().modelsPath || modelsRoot(); }
 async function transcribe(file, language = activeMeeting?.language || 'auto') {
+  if (!hasSpeech(file)) return [];
   const config = { ...preferences(), language };
   const provider = config.provider || config.engine || 'synapse';
   const recognitionEngine = config.recognitionEngine || 'whisper';
@@ -29,6 +31,15 @@ async function transcribe(file, language = activeMeeting?.language || 'auto') {
   }
   return cleanSegments(await synapse.transcribe(file, getKey(), { language: config.language, model: config.synapseModel || synapse.TRANSCRIPTION_MODEL }));
 }
+function hasSpeech(file) {
+  try {
+    const { stderr } = require('node:child_process').spawnSync('/opt/homebrew/bin/ffmpeg', ['-hide_banner', '-i', file, '-af', 'silencedetect=noise=-42dB:d=0.4', '-f', 'null', '-'], { encoding: 'utf8' });
+    const duration = Number((stderr.match(/Duration: (\d+):(\d+):(\d+\.\d+)/) || []).slice(1).reduce((total, value, index) => total + Number(value) * [3600, 60, 1][index], 0));
+    const silence = [...stderr.matchAll(/silence_duration: ([\d.]+)/g)].reduce((total, match) => total + Number(match[1]), 0);
+    return !duration || duration - silence >= 0.35;
+  } catch { return true; }
+}
+function track(promise) { pendingTranscriptions.add(promise); promise.finally(() => pendingTranscriptions.delete(promise)); return promise; }
 
 function getKey() {
   return keychain.get(app) || process.env.THALES_SYNAPSE_SYNAPSE_LLM_KEY || '';
@@ -110,13 +121,15 @@ ipcMain.handle('meeting:start', async (_event, { title, language }) => {
   db.startMeeting(activeMeeting);
   systemAudio = startSystemAudio({
     app, folder, startedAt: activeMeeting.startedAt,
-    onSegment: async segment => {
+    onSegment: segment => track((async () => {
       try {
-        const segments = await transcribe(segment.path);
-        db.addSegments(activeMeeting.id, 'them', (segment.startedAt - activeMeeting.startedAt) / 1000, segments);
-        window.webContents.send('meeting:transcript', db.getTranscript(activeMeeting.id));
+        const meeting = activeMeeting;
+        const segments = await transcribe(segment.path, meeting.language);
+        db.addSegments(meeting.id, 'them', (segment.startedAt - meeting.startedAt) / 1000, segments);
+        window.webContents.send('meeting:transcript', db.getTranscript(meeting.id));
       } catch (error) { window.webContents.send('meeting:error', error.message); }
-    },
+    })()),
+    onLevel: levelDb => window.webContents.send('meeting:system-level', levelDb),
     onError: message => window.webContents.send('meeting:error', message),
   });
   try { await systemAudio.ready; }
@@ -132,17 +145,22 @@ ipcMain.handle('meeting:segment', async (_event, { channel, bytes, startedAt }) 
   if (!activeMeeting) throw new Error('No active meeting');
   const file = path.join(activeMeeting.folder, `${channel}-${startedAt}.webm`);
   fs.writeFileSync(file, Buffer.from(bytes));
-  const segments = await transcribe(file);
-  const offset = (startedAt - activeMeeting.startedAt) / 1000;
-  db.addSegments(activeMeeting.id, channel === 'mic' ? 'me' : 'them', offset, segments);
-  window.webContents.send('meeting:transcript', db.getTranscript(activeMeeting.id));
+  const meeting = activeMeeting;
+  const work = (async () => {
+    const segments = await transcribe(file, meeting.language);
+    const offset = (startedAt - meeting.startedAt) / 1000;
+    db.addSegments(meeting.id, channel === 'mic' ? 'me' : 'them', offset, segments);
+    window.webContents.send('meeting:transcript', db.getTranscript(meeting.id));
+  })();
+  await track(work);
   return true;
 });
 ipcMain.handle('meeting:stop', async () => {
   if (!activeMeeting) return null;
   const meeting = activeMeeting;
   systemAudio?.stop(); systemAudio = null;
-  await new Promise(resolve => setTimeout(resolve, 1000));
+  await new Promise(resolve => setTimeout(resolve, 1200));
+  await Promise.allSettled([...pendingTranscriptions]);
   db.finishMeeting(meeting.id, Date.now());
   const transcript = db.getTranscript(meeting.id);
   let summary = null;

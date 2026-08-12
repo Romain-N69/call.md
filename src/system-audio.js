@@ -2,7 +2,7 @@ const { spawn } = require('node:child_process');
 const path = require('node:path');
 const readline = require('node:readline');
 
-function startSystemAudio({ app, folder, startedAt, onSegment, onError }) {
+function startSystemAudio({ app, folder, startedAt, onSegment, onLevel, onError }) {
   const binary = app.isPackaged
     ? path.join(process.resourcesPath, 'bin', 'SystemAudioCapture')
     : path.join(app.getAppPath(), 'build', 'bin', 'SystemAudioCapture');
@@ -15,6 +15,7 @@ function startSystemAudio({ app, folder, startedAt, onSegment, onError }) {
       const event = JSON.parse(line);
       if (event.ready) readyResolve();
       else if (event.path) onSegment(event);
+      else if (Number.isFinite(event.levelDb)) onLevel(event.levelDb);
       else if (event.error) { readyReject(new Error(event.error)); onError(event.error); }
     } catch { /* ignore malformed helper output */ }
   });

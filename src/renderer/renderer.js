@@ -3,7 +3,7 @@ const $ = id => document.getElementById(id);
 let streams = [], recorders = [], videoRecorder, segmentTimers = [], currentTranscript = [];
 let recording = false, startedAt = 0, activeMeetingId, timer, searchTimer;
 let sending = Promise.resolve();
-const segmentMs = 20000;
+const segmentMs = 5000;
 
 function error(message = '') { $('error').textContent = message; }
 function formatTime(seconds) { const n=Math.max(0,Math.floor(Number(seconds)||0)); return `${String(Math.floor(n/60)).padStart(2,'0')}:${String(n%60).padStart(2,'0')}`; }
@@ -52,7 +52,7 @@ async function start() {
     const mic=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true},video:false});
     const display=await navigator.mediaDevices.getDisplayMedia({video:true,audio:false});
     streams=[mic,display]; const meeting=await api.meeting.start({title:$('title').value.trim(),language:$('meetingLanguage').value}); activeMeetingId=meeting.id; startedAt=meeting.startedAt; recording=true;
-    createRecorder(mic,'mic'); createVideoRecorder(display); meter(mic,$('micMeter')); $('systemMeter').style.width='100%'; $('setup').hidden=true; $('live').hidden=false;
+    createRecorder(mic,'mic'); createVideoRecorder(display); meter(mic,$('micMeter')); $('setup').hidden=true; $('live').hidden=false;
     timer=setInterval(()=>$('clock').textContent=formatTime((Date.now()-startedAt)/1000),1000);
   } catch(e) { streams.forEach(s=>s.getTracks().forEach(t=>t.stop())); streams=[]; error(e.message); }
 }
@@ -94,5 +94,5 @@ $('recognitionEngine').onchange=()=>{ const whisper=$('recognitionEngine').value
 $('saveTranscription').onclick=async()=>{ const provider=document.querySelector('input[name="provider"]:checked').value, recognitionEngine=$('recognitionEngine').value, model=document.querySelector('input[name="localModel"]:checked')?.value; const state=await api.transcription.get(); if(provider==='synapse'&&recognitionEngine==='parakeet')return alert('Parakeet runs locally. Select Local · Apple Silicon.'); if(provider==='local'&&recognitionEngine==='whisper'&&!state.models[model]?.installed)return alert('Select an installed Whisper model first.'); if(provider==='local'&&recognitionEngine==='parakeet'&&!state.parakeet.installed)return alert('Select a folder containing a Parakeet ONNX model and tokens.txt first.'); await api.transcription.save({provider,recognitionEngine,model,synapseModel:document.querySelector('input[name="synapseModel"]:checked')?.value,language:'auto',modelsPath:$('modelsPath').value.trim()}); $('saveTranscription').textContent='Settings saved'; };
 $('start').onclick=start; $('stop').onclick=stop; $('bookmarkLive').onclick=bookmarkLive;
 $('search').oninput=()=>{ clearTimeout(searchTimer); searchTimer=setTimeout(loadHistory,180); };
-api.meeting.onTranscript(renderTranscript); api.meeting.onError(error);
+api.meeting.onTranscript(renderTranscript); api.meeting.onSystemLevel(db=>{ $('systemMeter').style.width=`${Math.max(4,Math.min(100,(db+60)/60*100))}%`; }); api.meeting.onError(error);
 refreshKeyStatus(); refreshTranscription(); refreshPermissions(); loadHistory();

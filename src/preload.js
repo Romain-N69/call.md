@@ -37,6 +37,11 @@ contextBridge.exposeInMainWorld('callLocal', {
       ipcRenderer.on('meeting:transcript', listener);
       return () => ipcRenderer.removeListener('meeting:transcript', listener);
     },
+    onSystemLevel: callback => {
+      const listener = (_event, level) => callback(level);
+      ipcRenderer.on('meeting:system-level', listener);
+      return () => ipcRenderer.removeListener('meeting:system-level', listener);
+    },
     onError: callback => {
       const listener = (_event, message) => callback(message);
       ipcRenderer.on('meeting:error', listener);
