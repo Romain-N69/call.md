@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog, ipcMain, safeStorage, shell, systemPreferences } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain, safeStorage, session, shell, systemPreferences } = require('electron');
 const { randomUUID } = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -19,8 +19,8 @@ const preferencesPath = () => path.join(app.getPath('userData'), 'preferences.js
 function preferences() { try { return JSON.parse(fs.readFileSync(preferencesPath(), 'utf8')); } catch { return { provider: 'synapse', recognitionEngine: 'whisper', model: 'small', language: 'auto', modelsPath: modelsRoot() }; } }
 function savePreferences(value) { fs.writeFileSync(preferencesPath(), JSON.stringify(value)); return value; }
 function configuredModelsRoot() { return preferences().modelsPath || modelsRoot(); }
-async function transcribe(file) {
-  const config = { ...preferences(), language: activeMeeting?.language || 'auto' };
+async function transcribe(file, language = activeMeeting?.language || 'auto') {
+  const config = { ...preferences(), language };
   const provider = config.provider || config.engine || 'synapse';
   const recognitionEngine = config.recognitionEngine || 'whisper';
   if (provider === 'local') {
@@ -58,7 +58,7 @@ app.whenReady().then(async () => {
   fs.mkdirSync(recordingsRoot(), { recursive: true });
   fs.mkdirSync(modelsRoot(), { recursive: true });
   db = openDatabase(path.join(app.getPath('userData'), 'meetings.db'));
-
+  session.defaultSession.setDisplayMediaRequestHandler((_request, callback) => callback({}), { useSystemPicker: true });
   await createWindow();
 });
 
@@ -126,6 +126,11 @@ ipcMain.handle('meeting:start', async (_event, { title, language }) => {
   catch (error) { systemAudio.stop(); systemAudio = null; db.deleteMeeting(activeMeeting.id); activeMeeting = null; throw error; }
   return activeMeeting;
 });
+ipcMain.handle('meeting:video-segment', (_event, { bytes, startedAt }) => {
+  if (!activeMeeting) throw new Error('No active meeting');
+  fs.writeFileSync(path.join(activeMeeting.folder, `screen-${startedAt}.webm`), Buffer.from(bytes));
+  return true;
+});
 ipcMain.handle('meeting:segment', async (_event, { channel, bytes, startedAt }) => {
   if (!activeMeeting) throw new Error('No active meeting');
   const file = path.join(activeMeeting.folder, `${channel}-${startedAt}.webm`);
@@ -160,6 +165,26 @@ ipcMain.handle('meeting:delete', (_event, id) => {
   const folder = db.deleteMeeting(id);
   if (folder) fs.rmSync(folder, { recursive: true, force: true });
   return true;
+});
+ipcMain.handle('meeting:retranscribe', async (_event, id, language = 'auto') => {
+  const meeting = db.getMeeting(id);
+  if (!meeting) throw new Error('Meeting not found');
+  const files = fs.readdirSync(meeting.folder).filter(file => /^(mic-|system-).+\.(webm|m4a)$/.test(file)).sort();
+  if (!files.length) throw new Error('No source audio files were found');
+  const segments = [];
+  for (const file of files) {
+    const match = file.match(/^(mic|system(?:_audio)?)-(\d+)/);
+    if (!match) continue;
+    const startedAt = Number(match[2]), channel = match[1] === 'mic' ? 'me' : 'them';
+    const transcript = await transcribe(path.join(meeting.folder, file), language);
+    const offset = Math.max(0, (startedAt - meeting.started_at) / 1000);
+    transcript.forEach(item => segments.push({ channel, start_time: offset + Number(item.start || 0), end_time: offset + Number(item.end || item.start || 0), text: item.text || '' }));
+  }
+  db.replaceTranscript(id, segments.sort((a, b) => a.start_time - b.start_time));
+  const transcript = db.getTranscript(id);
+  const summary = await synapse.summarize(transcript, getKey());
+  db.saveSummary(id, summary);
+  return db.getMeeting(id);
 });
 ipcMain.handle('meeting:export', async (_event, id) => {
   const meeting = db.getMeeting(id);

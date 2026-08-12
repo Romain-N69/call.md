@@ -20,6 +20,7 @@ contextBridge.exposeInMainWorld('callLocal', {
   meeting: {
     start: options => ipcRenderer.invoke('meeting:start', options),
     sendSegment: payload => ipcRenderer.invoke('meeting:segment', payload),
+    sendVideoSegment: payload => ipcRenderer.invoke('meeting:video-segment', payload),
     stop: () => ipcRenderer.invoke('meeting:stop'),
     list: query => ipcRenderer.invoke('meeting:list', query),
     get: id => ipcRenderer.invoke('meeting:get', id),
@@ -28,6 +29,7 @@ contextBridge.exposeInMainWorld('callLocal', {
     deleteBookmark: id => ipcRenderer.invoke('meeting:delete-bookmark', id),
     delete: id => ipcRenderer.invoke('meeting:delete', id),
     export: id => ipcRenderer.invoke('meeting:export', id),
+    retranscribe: (id, language) => ipcRenderer.invoke('meeting:retranscribe', id, language),
     openFolder: folder => ipcRenderer.invoke('meeting:open-folder', folder),
     onTranscript: callback => {
       const listener = (_event, transcript) => callback(transcript);

@@ -1,6 +1,6 @@
 const api = window.callLocal;
 const $ = id => document.getElementById(id);
-let streams = [], recorders = [], segmentTimers = [], currentTranscript = [];
+let streams = [], recorders = [], videoRecorder, segmentTimers = [], currentTranscript = [];
 let recording = false, startedAt = 0, activeMeetingId, timer, searchTimer;
 let sending = Promise.resolve();
 const segmentMs = 20000;
@@ -32,6 +32,11 @@ function createRecorder(stream, channel) {
   recorder.start(); recorders.push(recorder);
   const segmentTimer=setTimeout(()=>{ segmentTimers=segmentTimers.filter(t=>t!==segmentTimer); if(recorder.state!=='inactive')recorder.stop(); },segmentMs); segmentTimers.push(segmentTimer);
 }
+function createVideoRecorder(stream) {
+  videoRecorder=new MediaRecorder(new MediaStream(stream.getVideoTracks()),{mimeType:'video/webm;codecs=vp9'});
+  videoRecorder.ondataavailable=event=>{ if(!event.data.size)return; const startedAt=Date.now()-segmentMs; sending=sending.then(async()=>api.meeting.sendVideoSegment({bytes:await event.data.arrayBuffer(),startedAt})).catch(e=>error(e.message)); };
+  videoRecorder.start(segmentMs);
+}
 function meter(stream, element) {
   const context=new AudioContext(), analyser=context.createAnalyser(); analyser.fftSize=256; context.createMediaStreamSource(stream).connect(analyser); const data=new Uint8Array(analyser.frequencyBinCount);
   const tick=()=>{ if(!streams.includes(stream))return context.close(); analyser.getByteFrequencyData(data); element.style.width=`${Math.max(4,Math.min(100,data.reduce((a,b)=>a+b,0)/data.length))}%`; requestAnimationFrame(tick); }; tick();
@@ -44,14 +49,15 @@ async function start() {
   try {
     const config=await api.config.get(); if(!config.configured)throw new Error('Open Settings and save your Synapse key first.');
     const mic=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true},video:false});
-    streams=[mic]; const meeting=await api.meeting.start({title:$('title').value.trim(),language:$('meetingLanguage').value}); activeMeetingId=meeting.id; startedAt=meeting.startedAt; recording=true;
-    createRecorder(mic,'mic'); meter(mic,$('micMeter')); $('systemMeter').style.width='100%'; $('setup').hidden=true; $('live').hidden=false;
+    const display=await navigator.mediaDevices.getDisplayMedia({video:true,audio:false});
+    streams=[mic,display]; const meeting=await api.meeting.start({title:$('title').value.trim(),language:$('meetingLanguage').value}); activeMeetingId=meeting.id; startedAt=meeting.startedAt; recording=true;
+    createRecorder(mic,'mic'); createVideoRecorder(display); meter(mic,$('micMeter')); $('systemMeter').style.width='100%'; $('setup').hidden=true; $('live').hidden=false;
     timer=setInterval(()=>$('clock').textContent=formatTime((Date.now()-startedAt)/1000),1000);
   } catch(e) { streams.forEach(s=>s.getTracks().forEach(t=>t.stop())); streams=[]; error(e.message); }
 }
 async function stop() {
-  recording=false; segmentTimers.forEach(clearTimeout); segmentTimers=[]; recorders.forEach(r=>r.state!=='inactive'&&r.stop()); await new Promise(r=>setTimeout(r,500)); await sending;
-  streams.forEach(s=>s.getTracks().forEach(t=>t.stop())); streams=[]; recorders=[]; clearInterval(timer); $('clock').textContent='00:00';
+  recording=false; segmentTimers.forEach(clearTimeout); segmentTimers=[]; recorders.forEach(r=>r.state!=='inactive'&&r.stop()); if(videoRecorder?.state!=='inactive')videoRecorder.stop(); await new Promise(r=>setTimeout(r,500)); await sending;
+  streams.forEach(s=>s.getTracks().forEach(t=>t.stop())); streams=[]; recorders=[]; videoRecorder=null; clearInterval(timer); $('clock').textContent='00:00';
   const result=await api.meeting.stop(); $('live').hidden=true; $('setup').hidden=false; $('meetingLanguage').value='auto'; activeMeetingId=null; currentTranscript=[]; if(result)await openMeeting(result.id); await loadHistory();
 }
 async function bookmarkLive() { if(!activeMeetingId)return; const note=prompt('Bookmark note (optional)')||''; await api.meeting.bookmark(activeMeetingId,(Date.now()-startedAt)/1000,note); }
@@ -63,7 +69,7 @@ async function loadHistory() {
 async function openMeeting(id) {
   const m=await api.meeting.get(id); if(!m)return;
   $('detailBody').innerHTML=`<div class="detail-head"><small>${new Date(m.started_at).toLocaleString()}</small><h2>${escapeHtml(m.title)}</h2></div>
-    <div class="detail-actions"><button id="favoriteDetail" class="secondary ${m.favorite?'favorite':''}">${m.favorite?'★ Favorited':'☆ Favorite'}</button><button id="exportDetail">Export Markdown</button><button id="folderDetail" class="secondary">Open files</button><button id="deleteDetail" class="danger">Delete</button></div>
+    <div class="detail-actions"><button id="favoriteDetail" class="secondary ${m.favorite?'favorite':''}">${m.favorite?'★ Favorited':'☆ Favorite'}</button><button id="exportDetail">Export Markdown</button><button id="retranscribeDetail">Retranscribe</button><button id="folderDetail" class="secondary">Open files</button><button id="deleteDetail" class="danger">Delete</button></div>
     <div class="metrics-strip"><span><b>${m.metrics.talkRatio}%</b>You talk</span><span><b>${m.metrics.wordsPerMinute}</b>WPM</span><span><b>${m.metrics.questions}</b>Questions</span><span><b>${m.metrics.longestMonologue}s</b>Longest turn</span></div>
     <div class="detail-grid"><div><section class="summary-box"><h3>Summary</h3><p>${escapeHtml(m.summary||'No summary available.')}</p><h3>Key points</h3><ul class="list">${list(m.key_points).map(x=>`<li>${escapeHtml(x)}</li>`).join('')||'<li>None</li>'}</ul><h3>Action items</h3><ul class="list">${list(m.action_items).map(x=>`<li><input type="checkbox"> ${escapeHtml(x)}</li>`).join('')||'<li>None</li>'}</ul></section>
       <label>Notes<textarea id="notesDetail">${escapeHtml(m.notes)}</textarea></label><button id="saveNotes">Save notes</button><section class="bookmarks-box"><h3>Bookmarks</h3><div id="bookmarkList">${m.bookmarks.map(b=>`<div class="bookmark"><span>${formatTime(b.at_time)} · ${escapeHtml(b.note||'Important moment')}</span><button class="danger" data-delete-bookmark="${b.id}">×</button></div>`).join('')||'<p>No bookmarks.</p>'}</div></section></div>
@@ -71,7 +77,7 @@ async function openMeeting(id) {
   $('detail').showModal();
   $('favoriteDetail').onclick=async()=>{ await api.meeting.update(id,{title:m.title,notes:$('notesDetail').value,favorite:!m.favorite}); openMeeting(id); loadHistory(); };
   $('saveNotes').onclick=async()=>{ await api.meeting.update(id,{title:m.title,notes:$('notesDetail').value,favorite:m.favorite}); $('saveNotes').textContent='Saved'; loadHistory(); };
-  $('exportDetail').onclick=()=>api.meeting.export(id); $('folderDetail').onclick=()=>api.meeting.openFolder(m.folder);
+  $('exportDetail').onclick=()=>api.meeting.export(id); $('retranscribeDetail').onclick=async()=>{ const language=prompt('Language code, or auto','auto')||'auto'; $('retranscribeDetail').disabled=true; $('retranscribeDetail').textContent='Transcribing…'; try{ await api.meeting.retranscribe(id,language); await openMeeting(id); loadHistory(); }catch(e){ alert(e.message); $('retranscribeDetail').disabled=false; $('retranscribeDetail').textContent='Retranscribe'; } }; $('folderDetail').onclick=()=>api.meeting.openFolder(m.folder);
   $('deleteDetail').onclick=async()=>{ if(confirm('Delete this meeting, transcript, and local recordings?')){ await api.meeting.delete(id); $('detail').close(); loadHistory(); } };
   document.querySelectorAll('[data-delete-bookmark]').forEach(button=>button.onclick=async()=>{ await api.meeting.deleteBookmark(Number(button.dataset.deleteBookmark)); openMeeting(id); });
 }

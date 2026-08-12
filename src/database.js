@@ -73,6 +73,14 @@ function openDatabase(path) {
       return db.prepare(`SELECT channel,start_time,end_time,text
         FROM transcript_segments WHERE meeting_id=? ORDER BY start_time`).all(meetingId);
     },
+    replaceTranscript(meetingId, segments) {
+      db.transaction(() => {
+        db.prepare('DELETE FROM transcript_segments WHERE meeting_id=?').run(meetingId);
+        const insert = db.prepare(`INSERT INTO transcript_segments
+          (meeting_id,channel,start_time,end_time,text) VALUES (?,?,?,?,?)`);
+        segments.forEach(segment => insert.run(meetingId, segment.channel, segment.start_time, segment.end_time, segment.text));
+      })();
+    },
     updateMeeting(id, changes) {
       db.prepare('UPDATE meetings SET title=?, notes=?, favorite=? WHERE id=?')
         .run(changes.title, changes.notes || '', changes.favorite ? 1 : 0, id);
