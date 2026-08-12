@@ -1,16 +1,23 @@
-<!DOCTYPE html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta
-      http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; connect-src 'self' http://localhost:* https://*.trycloudflare.com https://fonts.googleapis.com https://fonts.gstatic.com; img-src 'self' data: https:; frame-src 'self' https://player.videodb.io;"
-    />
-    <title>Call.md</title>
-  </head>
-  <body>
-    <div id="root"></div>
-    <script type="module" src="./main.tsx"></script>
-  </body>
-</html>
+<!doctype html>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Synapse Call Local</title><link rel="stylesheet" href="./styles.css"></head>
+<body>
+  <main>
+    <header><div><small>LIVE MEETING INTELLIGENCE</small><h1>Synapse Call <i>Local</i></h1></div><span id="clock">00:00</span></header>
+    <section id="setup" class="panel">
+      <h2>Ready to listen</h2>
+      <p>Microphone and system audio are captured as separate channels. Recordings and transcripts stay on this Mac.</p>
+      <label>Meeting title<input id="title" value="Untitled meeting"></label>
+      <div class="permissions"><button id="micPermission">Enable microphone</button><button id="screenPermission">Enable system audio</button></div>
+      <label>Synapse key<input id="key" type="password" placeholder="THALES_SYNAPSE_SYNAPSE_LLM_KEY"></label>
+      <button id="saveKey" class="secondary">Save key to Keychain</button>
+      <button id="start" class="record">Start meeting</button>
+      <p id="error" role="alert"></p>
+    </section>
+    <section id="live" class="live" hidden>
+      <aside class="panel"><small>CHANNELS</small><div class="meter"><span>YOU · MICROPHONE</span><b id="micMeter"></b></div><div class="meter"><span>THEM · SYSTEM AUDIO</span><b id="systemMeter"></b></div><button id="stop">Stop & summarize</button></aside>
+      <article class="panel transcript"><div class="title"><h2>Live transcript</h2><span class="dot">REC</span></div><div id="transcript"></div></article>
+    </section>
+    <section class="panel history"><div class="title"><h2>Meeting history</h2><button id="refresh" class="secondary">Refresh</button></div><div id="meetings"></div></section>
+  </main>
+  <script src="./renderer.js"></script>
+</body></html>
