@@ -5,7 +5,7 @@ const path = require('node:path');
 const { openDatabase } = require('./database');
 const { startSystemAudio } = require('./system-audio');
 const { markdown } = require('./insights');
-const { cleanSegments, localTranscribe, modelState, selectedModel, MODELS } = require('./transcription');
+const { cleanSegments, parakeetState, parakeetTranscribe, whisperTranscribe, modelState, selectedModel, MODELS } = require('./transcription');
 const synapse = require('./synapse');
 
 let window;
@@ -16,13 +16,16 @@ const keyPath = () => path.join(app.getPath('userData'), 'synapse-key.bin');
 const recordingsRoot = () => path.join(app.getPath('userData'), 'recordings');
 const modelsRoot = () => path.join(app.getPath('userData'), 'models');
 const preferencesPath = () => path.join(app.getPath('userData'), 'preferences.json');
-function preferences() { try { return JSON.parse(fs.readFileSync(preferencesPath(), 'utf8')); } catch { return { engine: 'synapse', model: 'small', language: 'auto', modelsPath: modelsRoot() }; } }
+function preferences() { try { return JSON.parse(fs.readFileSync(preferencesPath(), 'utf8')); } catch { return { provider: 'synapse', recognitionEngine: 'whisper', model: 'small', language: 'auto', modelsPath: modelsRoot() }; } }
 function savePreferences(value) { fs.writeFileSync(preferencesPath(), JSON.stringify(value)); return value; }
 function configuredModelsRoot() { return preferences().modelsPath || modelsRoot(); }
 async function transcribe(file) {
   const config = preferences();
-  if (config.engine === 'local') {
-    return localTranscribe(file, { modelPath: selectedModel(config.modelsPath || modelsRoot(), config.model), language: config.language });
+  const provider = config.provider || config.engine || 'synapse';
+  const recognitionEngine = config.recognitionEngine || 'whisper';
+  if (provider === 'local') {
+    if (recognitionEngine === 'parakeet') return parakeetTranscribe(file, { modelsDir: config.modelsPath || modelsRoot() });
+    return whisperTranscribe(file, { modelPath: selectedModel(config.modelsPath || modelsRoot(), config.model), language: config.language });
   }
   return cleanSegments(await synapse.transcribe(file, getKey(), { language: config.language }));
 }
@@ -69,7 +72,7 @@ ipcMain.handle('config:save-key', async (_event, key) => {
   return { configured: true, source: 'keychain' };
 });
 ipcMain.handle('config:test', () => synapse.validateKey(getKey()));
-ipcMain.handle('transcription:get', () => ({ preferences: { ...preferences(), modelsPath: configuredModelsRoot() }, models: modelState(configuredModelsRoot()) }));
+ipcMain.handle('transcription:get', () => ({ preferences: { ...preferences(), provider: preferences().provider || preferences().engine || 'synapse', recognitionEngine: preferences().recognitionEngine || 'whisper', modelsPath: configuredModelsRoot() }, models: modelState(configuredModelsRoot()), parakeet: parakeetState(configuredModelsRoot()) }));
 ipcMain.handle('transcription:save', (_event, value) => {
   if (!path.isAbsolute(value.modelsPath)) throw new Error('Models folder must be an absolute path');
   fs.mkdirSync(value.modelsPath, { recursive: true });

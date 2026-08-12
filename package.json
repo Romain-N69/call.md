@@ -10,7 +10,8 @@
     "dist:mac": "electron-builder --mac --arm64"
   },
   "dependencies": {
-    "better-sqlite3": "^12.6.2"
+    "better-sqlite3": "^12.6.2",
+    "sherpa-onnx-node": "^1.13.5"
   },
   "devDependencies": {
     "electron": "^34.3.0",
@@ -21,11 +22,29 @@
     "productName": "Synapse Call Local",
     "asar": true,
     "afterPack": "scripts/after-pack.js",
-    "asarUnpack": ["node_modules/better-sqlite3/build/**"],
-    "files": ["src/**/*", "package.json", "node_modules/**/*"],
-    "extraResources": [{"from": "build/bin/SystemAudioCapture", "to": "bin/SystemAudioCapture"}],
+    "asarUnpack": [
+      "node_modules/better-sqlite3/build/**"
+    ],
+    "files": [
+      "src/**/*",
+      "package.json",
+      "node_modules/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "build/bin/SystemAudioCapture",
+        "to": "bin/SystemAudioCapture"
+      }
+    ],
     "mac": {
-      "target": [{"target": "dmg", "arch": ["arm64"]}],
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64"
+          ]
+        }
+      ],
       "category": "public.app-category.productivity",
       "hardenedRuntime": false,
       "entitlements": "build/entitlements.mac.plist",

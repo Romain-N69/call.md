@@ -19,7 +19,7 @@ function cleanSegments(segments) {
   }).map(segment => ({ start: Number(segment.start || segment.offsets?.from || 0) / (segment.offsets ? 1000 : 1), end: Number(segment.end || segment.offsets?.to || 0) / (segment.offsets ? 1000 : 1), text: String(segment.text).trim() }));
 }
 
-async function localTranscribe(input, { modelPath, language = 'auto', whisperBinary = '/opt/homebrew/bin/whisper-cli', ffmpegBinary = '/opt/homebrew/bin/ffmpeg' }) {
+async function whisperTranscribe(input, { modelPath, language = 'auto', whisperBinary = '/opt/homebrew/bin/whisper-cli', ffmpegBinary = '/opt/homebrew/bin/ffmpeg' }) {
   const wav = `${input}.wav`, output = `${input}.whisper`;
   try {
     await exec(ffmpegBinary, ['-y', '-i', input, '-ar', '16000', '-ac', '1', '-af', 'highpass=f=100,lowpass=f=7500', wav]);
@@ -29,6 +29,35 @@ async function localTranscribe(input, { modelPath, language = 'auto', whisperBin
   } finally {
     for (const file of [wav, `${output}.json`]) fs.rmSync(file, { force: true });
   }
+}
+
+async function parakeetTranscribe(input, { modelsDir, ffmpegBinary = '/opt/homebrew/bin/ffmpeg' }) {
+  const { OfflineRecognizer, readWave } = require('sherpa-onnx-node');
+  const model = findFile(modelsDir, file => /parakeet.*\.onnx$/i.test(file) || /model.*\.onnx$/i.test(file));
+  const tokens = findFile(modelsDir, file => /tokens\.txt$/i.test(file));
+  if (!model || !tokens) throw new Error('Parakeet requires an ONNX model and tokens.txt in the selected folder');
+  const wav = `${input}.parakeet.wav`;
+  try {
+    await exec(ffmpegBinary, ['-y', '-i', input, '-ar', '16000', '-ac', '1', wav]);
+    const recognizer = await OfflineRecognizer.createAsync({ featConfig: { sampleRate: 16000, featureDim: 80 }, modelConfig: { nemoCtc: { model }, tokens, numThreads: 4, provider: 'cpu' } });
+    const stream = recognizer.createStream(), wave = readWave(wav); stream.acceptWaveform(wave); await recognizer.decodeAsync(stream); const result = recognizer.getResult(stream);
+    return result.text ? [{ start: 0, end: wave.samples.length / wave.sampleRate, text: result.text }] : [];
+  } finally { fs.rmSync(wav, { force: true }); }
+}
+
+function findFile(root, predicate) {
+  if (!fs.existsSync(root)) return null;
+  for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
+    const found = entry.isDirectory() ? findFile(path.join(root, entry.name), predicate) : predicate(entry.name) ? path.join(root, entry.name) : null;
+    if (found) return found;
+  }
+  return null;
+}
+
+function parakeetState(modelsDir) {
+  const model = findFile(modelsDir, file => /parakeet.*\.onnx$/i.test(file) || /model.*\.onnx$/i.test(file));
+  const tokens = findFile(modelsDir, file => /tokens\.txt$/i.test(file));
+  return { installed: Boolean(model && tokens), model, tokens };
 }
 
 function modelState(modelsDir) {
@@ -48,4 +77,4 @@ function selectedModel(modelsDir, id) {
   return model.path;
 }
 
-module.exports = { MODELS, cleanSegments, localTranscribe, modelState, selectedModel };
+module.exports = { MODELS, cleanSegments, parakeetState, parakeetTranscribe, whisperTranscribe, modelState, selectedModel };
