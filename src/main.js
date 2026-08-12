@@ -159,17 +159,25 @@ ipcMain.handle('meeting:segment', async (_event, { channel, bytes, startedAt }) 
 ipcMain.handle('meeting:stop', async () => {
   if (!activeMeeting) return null;
   const meeting = activeMeeting;
+  const progress = (stage, percent, detail) => window.webContents.send('meeting:processing', { stage, percent, detail });
+  progress('Saving recordings', 20, 'Closing microphone, system audio, and screen files…');
   systemAudio?.stop(); systemAudio = null;
   await new Promise(resolve => setTimeout(resolve, 1200));
+  progress('Finishing transcript', 55, pendingTranscriptions.size ? `Waiting for ${pendingTranscriptions.size} audio segment${pendingTranscriptions.size === 1 ? '' : 's'}…` : 'All audio segments are ready.');
   await Promise.allSettled([...pendingTranscriptions]);
   db.finishMeeting(meeting.id, Date.now());
   const transcript = db.getTranscript(meeting.id);
   let summary = null;
   try {
+    progress('Creating summary', 82, 'Extracting key points and action items with Synapse…');
     summary = await synapse.summarize(transcript, getKey());
     db.saveSummary(meeting.id, summary);
-  } catch (error) { console.error(error); }
+  } catch (error) {
+    console.error(error);
+    progress('Summary unavailable', 95, 'The recording and transcript are saved. You can retry later.');
+  }
   activeMeeting = null;
+  progress('Meeting saved', 100, 'Recording, transcript, and notes are ready.');
   return { ...meeting, transcript, summary };
 });
 ipcMain.handle('meeting:list', (_event, query) => db.listMeetings(query));

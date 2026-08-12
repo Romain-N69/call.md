@@ -6,6 +6,8 @@ let sending = Promise.resolve();
 const segmentMs = 5000;
 
 function error(message = '') { $('error').textContent = message; }
+function toast(message) { $('toast').textContent=message; $('toast').hidden=false; clearTimeout(toast.timer); toast.timer=setTimeout(()=>$('toast').hidden=true,4000); }
+function processing(status) { $('processing').hidden=false; $('processingStage').textContent=status.stage; $('processingDetail').textContent=status.detail; $('processingBar').style.transform=`scaleX(${status.percent/100})`; $('processingPercent').textContent=`${status.percent}%`; }
 function formatTime(seconds) { const n=Math.max(0,Math.floor(Number(seconds)||0)); return `${String(Math.floor(n/60)).padStart(2,'0')}:${String(n%60).padStart(2,'0')}`; }
 function escapeHtml(value = '') { const div=document.createElement('div'); div.textContent=value; return div.innerHTML; }
 function list(value) { return Array.isArray(value) ? value : []; }
@@ -57,9 +59,14 @@ async function start() {
   } catch(e) { streams.forEach(s=>s.getTracks().forEach(t=>t.stop())); streams=[]; error(e.message); }
 }
 async function stop() {
-  recording=false; segmentTimers.forEach(clearTimeout); segmentTimers=[]; recorders.forEach(r=>r.state!=='inactive'&&r.stop()); if(videoRecorder?.state!=='inactive')videoRecorder.stop(); await new Promise(r=>setTimeout(r,500)); await sending;
-  streams.forEach(s=>s.getTracks().forEach(t=>t.stop())); streams=[]; recorders=[]; videoRecorder=null; clearInterval(timer); $('clock').textContent='00:00';
-  const result=await api.meeting.stop(); $('live').hidden=true; $('setup').hidden=false; $('meetingLanguage').value='auto'; activeMeetingId=null; currentTranscript=[]; if(result)await openMeeting(result.id); await loadHistory();
+  if(!recording)return;
+  $('stop').disabled=true; $('stop').textContent='Finishing…'; processing({stage:'Saving recordings',detail:'Closing microphone, system audio, and screen files…',percent:10});
+  try {
+    recording=false; segmentTimers.forEach(clearTimeout); segmentTimers=[]; recorders.forEach(r=>r.state!=='inactive'&&r.stop()); if(videoRecorder?.state!=='inactive')videoRecorder.stop(); await new Promise(r=>setTimeout(r,500)); await sending;
+    streams.forEach(s=>s.getTracks().forEach(t=>t.stop())); streams=[]; recorders=[]; videoRecorder=null; clearInterval(timer); $('clock').textContent='00:00';
+    const result=await api.meeting.stop(); $('live').hidden=true; $('setup').hidden=false; $('meetingLanguage').value='auto'; activeMeetingId=null; currentTranscript=[]; $('processing').hidden=true; toast('Meeting saved'); if(result)await openMeeting(result.id); await loadHistory();
+  } catch(e) { $('processing').hidden=true; error(`Meeting could not finish. ${e.message}`); toast('Meeting finish failed. Your local files were kept.'); }
+  finally { $('stop').disabled=false; $('stop').textContent='Finish meeting'; }
 }
 async function bookmarkLive() { if(!activeMeetingId)return; const note=prompt('Bookmark note (optional)')||''; await api.meeting.bookmark(activeMeetingId,(Date.now()-startedAt)/1000,note); }
 async function loadHistory() {
@@ -94,5 +101,5 @@ $('recognitionEngine').onchange=()=>{ const whisper=$('recognitionEngine').value
 $('saveTranscription').onclick=async()=>{ const provider=document.querySelector('input[name="provider"]:checked').value, recognitionEngine=$('recognitionEngine').value, model=document.querySelector('input[name="localModel"]:checked')?.value; const state=await api.transcription.get(); if(provider==='synapse'&&recognitionEngine==='parakeet')return alert('Parakeet runs locally. Select Local · Apple Silicon.'); if(provider==='local'&&recognitionEngine==='whisper'&&!state.models[model]?.installed)return alert('Select an installed Whisper model first.'); if(provider==='local'&&recognitionEngine==='parakeet'&&!state.parakeet.installed)return alert('Select a folder containing a Parakeet ONNX model and tokens.txt first.'); await api.transcription.save({provider,recognitionEngine,model,synapseModel:document.querySelector('input[name="synapseModel"]:checked')?.value,language:'auto',modelsPath:$('modelsPath').value.trim()}); $('saveTranscription').textContent='Settings saved'; };
 $('start').onclick=start; $('stop').onclick=stop; $('bookmarkLive').onclick=bookmarkLive;
 $('search').oninput=()=>{ clearTimeout(searchTimer); searchTimer=setTimeout(loadHistory,180); };
-api.meeting.onTranscript(renderTranscript); api.meeting.onSystemLevel(db=>{ $('systemMeter').style.width=`${Math.max(4,Math.min(100,(db+60)/60*100))}%`; }); api.meeting.onError(error);
+api.meeting.onTranscript(renderTranscript); api.meeting.onProcessing(processing); api.meeting.onSystemLevel(db=>{ $('systemMeter').style.width=`${Math.max(4,Math.min(100,(db+60)/60*100))}%`; }); api.meeting.onError(error);
 refreshKeyStatus(); refreshTranscription(); refreshPermissions(); loadHistory();
