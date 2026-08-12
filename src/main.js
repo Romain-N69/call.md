@@ -3,6 +3,7 @@ const { randomUUID } = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
 const { openDatabase } = require('./database');
+const { markdown } = require('./insights');
 const synapse = require('./synapse');
 
 let window;
@@ -29,6 +30,7 @@ async function createWindow() {
     minWidth: 880,
     minHeight: 620,
     titleBarStyle: 'hiddenInset',
+    trafficLightPosition: { x: 18, y: 18 },
     backgroundColor: '#dce8ec',
     webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false },
   });
@@ -94,6 +96,22 @@ ipcMain.handle('meeting:stop', async () => {
   activeMeeting = null;
   return { ...meeting, transcript, summary };
 });
-ipcMain.handle('meeting:list', () => db.listMeetings());
-ipcMain.handle('meeting:transcript', (_event, id) => db.getTranscript(id));
+ipcMain.handle('meeting:list', (_event, query) => db.listMeetings(query));
+ipcMain.handle('meeting:get', (_event, id) => db.getMeeting(id));
+ipcMain.handle('meeting:update', (_event, id, changes) => db.updateMeeting(id, changes));
+ipcMain.handle('meeting:bookmark', (_event, meetingId, atTime, note) => db.addBookmark(meetingId, atTime, note));
+ipcMain.handle('meeting:delete-bookmark', (_event, id) => db.deleteBookmark(id));
+ipcMain.handle('meeting:delete', (_event, id) => {
+  const folder = db.deleteMeeting(id);
+  if (folder) fs.rmSync(folder, { recursive: true, force: true });
+  return true;
+});
+ipcMain.handle('meeting:export', async (_event, id) => {
+  const meeting = db.getMeeting(id);
+  if (!meeting) throw new Error('Meeting not found');
+  const file = path.join(meeting.folder, `${meeting.title.replace(/[^a-z0-9-_ ]/gi, '').trim() || 'meeting'}.md`);
+  fs.writeFileSync(file, markdown(meeting, meeting.transcript, meeting.bookmarks));
+  await shell.showItemInFolder(file);
+  return file;
+});
 ipcMain.handle('meeting:open-folder', (_event, folder) => shell.openPath(folder));

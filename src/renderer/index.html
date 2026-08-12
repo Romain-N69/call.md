@@ -1,23 +1,33 @@
 <!doctype html>
 <html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Synapse Call Local</title><link rel="stylesheet" href="./styles.css"></head>
 <body>
+  <div class="dragbar"><span>Synapse Call Local</span></div>
   <main>
-    <header><div><small>LIVE MEETING INTELLIGENCE</small><h1>Synapse Call <i>Local</i></h1></div><span id="clock">00:00</span></header>
-    <section id="setup" class="panel">
-      <h2>Ready to listen</h2>
-      <p>Microphone and system audio are captured as separate channels. Recordings and transcripts stay on this Mac.</p>
-      <label>Meeting title<input id="title" value="Untitled meeting"></label>
-      <div class="permissions"><button id="micPermission">Enable microphone</button><button id="screenPermission">Enable system audio</button></div>
-      <label>Synapse key<input id="key" type="password" placeholder="THALES_SYNAPSE_SYNAPSE_LLM_KEY"></label>
-      <button id="saveKey" class="secondary">Save key to Keychain</button>
-      <button id="start" class="record">Start meeting</button>
-      <p id="error" role="alert"></p>
+    <header><div><small>PRIVATE MEETING INTELLIGENCE</small><h1>Synapse Call <i>Local</i></h1></div><span id="clock">00:00</span></header>
+    <nav class="tabs" aria-label="Application sections"><button class="tab active" data-view="recordView">Record</button><button class="tab" data-view="libraryView">Library</button><button class="tab" data-view="settingsView">Settings</button></nav>
+
+    <section id="recordView" class="view">
+      <section id="setup" class="panel setup">
+        <div><small>NEW SESSION</small><h2>Ready to listen</h2><p>Your microphone and system audio become separate speaker channels. Files stay on this Mac.</p></div>
+        <label>Meeting title<input id="title" value="Untitled meeting"></label>
+        <div class="permission-row"><span id="micStatus">Microphone</span><button id="micPermission" class="secondary">Allow</button><span id="screenStatus">System audio</span><button id="screenPermission" class="secondary">Allow</button></div>
+        <button id="start" class="record">Start meeting</button><p id="error" role="alert"></p>
+      </section>
+      <section id="live" class="live" hidden>
+        <aside class="panel channels"><small>CHANNELS</small><div class="meter"><span>YOU · MICROPHONE</span><b id="micMeter"></b></div><div class="meter"><span>THEM · SYSTEM AUDIO</span><b id="systemMeter"></b></div><button id="bookmarkLive" class="secondary">◆ Bookmark moment</button><button id="stop">Stop & summarize</button></aside>
+        <article class="panel transcript"><div class="section-title"><h2>Live transcript</h2><span class="dot">REC</span></div><div class="metrics-strip"><span><b id="talkRatio">0%</b>You talk</span><span><b id="wpm">0</b>WPM</span><span><b id="questions">0</b>Questions</span><span><b id="monologue">0s</b>Longest turn</span></div><div id="nudge" class="nudge" hidden></div><div id="transcript"></div></article>
+      </section>
     </section>
-    <section id="live" class="live" hidden>
-      <aside class="panel"><small>CHANNELS</small><div class="meter"><span>YOU · MICROPHONE</span><b id="micMeter"></b></div><div class="meter"><span>THEM · SYSTEM AUDIO</span><b id="systemMeter"></b></div><button id="stop">Stop & summarize</button></aside>
-      <article class="panel transcript"><div class="title"><h2>Live transcript</h2><span class="dot">REC</span></div><div id="transcript"></div></article>
+
+    <section id="libraryView" class="view" hidden>
+      <section class="panel library"><div class="section-title"><div><small>LOCAL ARCHIVE</small><h2>Meeting library</h2></div><input id="search" type="search" placeholder="Search titles, notes, summaries, transcripts"></div><div id="meetings"></div></section>
     </section>
-    <section class="panel history"><div class="title"><h2>Meeting history</h2><button id="refresh" class="secondary">Refresh</button></div><div id="meetings"></div></section>
+
+    <section id="settingsView" class="view" hidden>
+      <section class="panel settings"><small>CONNECTION</small><h2>Thales Synapse</h2><p>The API key is encrypted with macOS Keychain. It is never stored in SQLite or exported.</p><label>Synapse key<input id="key" type="password" placeholder="THALES_SYNAPSE_SYNAPSE_LLM_KEY"></label><button id="saveKey">Save key to Keychain</button><div id="models" class="model-info"></div></section>
+    </section>
   </main>
+
+  <dialog id="detail"><form method="dialog"><button class="close" aria-label="Close">×</button></form><div id="detailBody"></div></dialog>
   <script src="./renderer.js"></script>
 </body></html>
