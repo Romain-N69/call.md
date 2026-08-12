@@ -14,9 +14,8 @@ const keyPath = () => path.join(app.getPath('userData'), 'synapse-key.bin');
 const recordingsRoot = () => path.join(app.getPath('userData'), 'recordings');
 
 function getKey() {
-  if (process.env.THALES_SYNAPSE_SYNAPSE_LLM_KEY) return process.env.THALES_SYNAPSE_SYNAPSE_LLM_KEY;
-  if (!fs.existsSync(keyPath()) || !safeStorage.isEncryptionAvailable()) return '';
-  return safeStorage.decryptString(fs.readFileSync(keyPath()));
+  if (fs.existsSync(keyPath()) && safeStorage.isEncryptionAvailable()) return safeStorage.decryptString(fs.readFileSync(keyPath()));
+  return process.env.THALES_SYNAPSE_SYNAPSE_LLM_KEY || '';
 }
 
 function saveKey(key) {
@@ -53,7 +52,7 @@ app.whenReady().then(async () => {
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
 app.on('before-quit', () => db?.close());
 
-ipcMain.handle('config:get', () => ({ configured: Boolean(getKey()), source: process.env.THALES_SYNAPSE_SYNAPSE_LLM_KEY ? 'environment' : fs.existsSync(keyPath()) ? 'keychain' : null, baseUrl: synapse.BASE_URL, chatModel: synapse.CHAT_MODEL, transcriptionModel: synapse.TRANSCRIPTION_MODEL }));
+ipcMain.handle('config:get', () => ({ configured: Boolean(getKey()), source: fs.existsSync(keyPath()) ? 'keychain' : process.env.THALES_SYNAPSE_SYNAPSE_LLM_KEY ? 'environment' : null, baseUrl: synapse.BASE_URL, chatModel: synapse.CHAT_MODEL, transcriptionModel: synapse.TRANSCRIPTION_MODEL }));
 ipcMain.handle('config:save-key', async (_event, key) => {
   await synapse.validateKey(key);
   saveKey(key);
