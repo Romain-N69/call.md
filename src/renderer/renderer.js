@@ -118,7 +118,9 @@ function createRecorder(stream, channel) {
   segmentTimers.push(segmentTimer);
 }
 function createVideoRecorder(stream) {
-  videoRecorder = new MediaRecorder(new MediaStream(stream.getVideoTracks()), { mimeType: 'video/webm;codecs=vp9' });
+  const [track] = stream.getVideoTracks();
+  track.onended = () => { if (recording && !stopping) { toast('Le partage d’écran est terminé. Finalisation de la réunion…'); stop(); } };
+  videoRecorder = new MediaRecorder(new MediaStream([track]), { mimeType: 'video/webm;codecs=vp9' });
   videoRecorder.ondataavailable = event => {
     if (!event.data.size) return;
     sending = sending.then(async () => api.meeting.sendVideoSegment({ bytes: await event.data.arrayBuffer(), startedAt })).catch(error => setError(`Vidéo interrompue. ${error.message}`));
@@ -333,6 +335,12 @@ api.meeting.onTranscript(renderTranscript);
 api.meeting.onProcessing(processing);
 api.meeting.onSystemLevel(db => updateMeter($('systemMeter'), $('systemValue'), (db + 60) / 60 * 100));
 api.meeting.onError(message => setError(`Erreur de capture. ${message}`));
+api.app.onCloseRequested(async quit => {
+  const confirmed = await ask({ title: 'Terminer avant de quitter ?', description: 'La réunion est encore enregistrée. Elle doit être finalisée pour conserver la vidéo et les dernières paroles.', confirm: 'Terminer et quitter', danger: true });
+  if (!confirmed) return;
+  await stop();
+  await api.app.close(quit);
+});
 $('detail').addEventListener('close', () => lastFocused?.focus());
 document.addEventListener('keydown', event => { if (event.metaKey && event.key === '1') { event.preventDefault(); showView('recordView'); } if (event.metaKey && event.key === '2') { event.preventDefault(); showView('libraryView'); } if (event.metaKey && event.key === ',') { event.preventDefault(); showView('settingsView'); } });
 

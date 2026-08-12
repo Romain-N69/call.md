@@ -15,6 +15,7 @@ let db;
 let activeMeeting;
 let systemAudio;
 let pendingTranscriptions = new Set();
+let allowClose = false;
 const recordingsRoot = () => path.join(app.getPath('userData'), 'recordings');
 const modelsRoot = () => path.join(app.getPath('userData'), 'models');
 const preferencesPath = () => path.join(app.getPath('userData'), 'preferences.json');
@@ -59,6 +60,11 @@ async function createWindow() {
     backgroundColor: '#dce8ec',
     webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false },
   });
+  window.on('close', event => {
+    if (!activeMeeting || allowClose) return;
+    event.preventDefault();
+    window.webContents.send('app:close-requested', false);
+  });
   await window.loadFile(path.join(__dirname, 'renderer', 'index.html'));
 }
 
@@ -71,8 +77,12 @@ app.whenReady().then(async () => {
 });
 
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
-app.on('before-quit', () => db?.close());
+app.on('before-quit', event => {
+  if (activeMeeting && !allowClose) { event.preventDefault(); window.webContents.send('app:close-requested', true); return; }
+  systemAudio?.stop(); db?.close();
+});
 
+ipcMain.handle('app:close', (_event, quit) => { allowClose = true; quit ? app.quit() : window.close(); });
 ipcMain.handle('config:get', () => ({ configured: Boolean(getKey()), source: keychain.get(app) ? 'keychain' : process.env.THALES_SYNAPSE_SYNAPSE_LLM_KEY ? 'environment' : null, baseUrl: synapse.BASE_URL, chatModel: synapse.CHAT_MODEL, transcriptionModel: synapse.TRANSCRIPTION_MODEL }));
 ipcMain.handle('config:save-key', async (_event, key) => {
   if (typeof key !== 'string' || !key.trim()) throw new Error('A Synapse key is required');
@@ -169,8 +179,7 @@ ipcMain.handle('meeting:stop', async () => {
   const meeting = activeMeeting;
   const progress = (stage, percent, detail) => window.webContents.send('meeting:processing', { stage, percent, detail });
   progress('Enregistrement des médias', 20, 'Fermeture du microphone, de l’audio système et de la vidéo…');
-  systemAudio?.stop(); systemAudio = null;
-  await new Promise(resolve => setTimeout(resolve, 1200));
+  await systemAudio?.stop(); systemAudio = null;
   progress('Finalisation de la transcription', 55, pendingTranscriptions.size ? `${pendingTranscriptions.size} segment${pendingTranscriptions.size === 1 ? '' : 's'} audio encore en cours…` : 'Tous les segments audio sont prêts.');
   await Promise.allSettled([...pendingTranscriptions]);
   progress('Finalisation de la vidéo', 70, 'Création d’un fichier vidéo continu et lisible…');

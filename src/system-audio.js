@@ -21,8 +21,18 @@ function startSystemAudio({ app, folder, startedAt, onSegment, onLevel, onError 
   });
   child.stderr.on('data', data => onError(data.toString().trim()));
   child.once('error', error => { readyReject(error); onError(error.message); });
+  let stopPromise;
   child.once('exit', code => { if (code && code !== 0) readyReject(new Error(`System audio helper exited (${code})`)); });
-  return { ready, stop: () => { if (!child.killed) { child.stdin.end('\n'); setTimeout(() => child.kill(), 3000); } } };
+  return {
+    ready,
+    stop: () => stopPromise ||= new Promise(resolve => {
+      if (child.exitCode !== null || child.killed) return resolve();
+      child.once('exit', resolve);
+      child.stdin.end('\n');
+      const timeout = setTimeout(() => child.kill(), 3000);
+      timeout.unref();
+    }),
+  };
 }
 
 module.exports = { startSystemAudio };

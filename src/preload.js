@@ -1,6 +1,14 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('callLocal', {
+  app: {
+    close: quit => ipcRenderer.invoke('app:close', quit),
+    onCloseRequested: callback => {
+      const listener = (_event, quit) => callback(quit);
+      ipcRenderer.on('app:close-requested', listener);
+      return () => ipcRenderer.removeListener('app:close-requested', listener);
+    },
+  },
   config: {
     get: () => ipcRenderer.invoke('config:get'),
     saveKey: key => ipcRenderer.invoke('config:save-key', key),
