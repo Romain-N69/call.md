@@ -1,8 +1,9 @@
-const { app, BrowserWindow, dialog, ipcMain, safeStorage, session, shell, systemPreferences } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain, session, shell, systemPreferences } = require('electron');
 const { randomUUID } = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
 const { openDatabase } = require('./database');
+const keychain = require('./keychain');
 const { startSystemAudio } = require('./system-audio');
 const { markdown } = require('./insights');
 const { cleanSegments, parakeetState, parakeetTranscribe, whisperTranscribe, modelState, selectedModel, MODELS } = require('./transcription');
@@ -12,7 +13,6 @@ let window;
 let db;
 let activeMeeting;
 let systemAudio;
-const keyPath = () => path.join(app.getPath('userData'), 'synapse-key.bin');
 const recordingsRoot = () => path.join(app.getPath('userData'), 'recordings');
 const modelsRoot = () => path.join(app.getPath('userData'), 'models');
 const preferencesPath = () => path.join(app.getPath('userData'), 'preferences.json');
@@ -31,14 +31,10 @@ async function transcribe(file, language = activeMeeting?.language || 'auto') {
 }
 
 function getKey() {
-  if (fs.existsSync(keyPath()) && safeStorage.isEncryptionAvailable()) return safeStorage.decryptString(fs.readFileSync(keyPath()));
-  return process.env.THALES_SYNAPSE_SYNAPSE_LLM_KEY || '';
+  return keychain.get(app) || process.env.THALES_SYNAPSE_SYNAPSE_LLM_KEY || '';
 }
 
-function saveKey(key) {
-  if (!safeStorage.isEncryptionAvailable()) throw new Error('macOS Keychain is unavailable');
-  fs.writeFileSync(keyPath(), safeStorage.encryptString(key));
-}
+function saveKey(key) { keychain.set(app, key); }
 
 async function createWindow() {
   window = new BrowserWindow({
@@ -65,7 +61,7 @@ app.whenReady().then(async () => {
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
 app.on('before-quit', () => db?.close());
 
-ipcMain.handle('config:get', () => ({ configured: Boolean(getKey()), source: fs.existsSync(keyPath()) ? 'keychain' : process.env.THALES_SYNAPSE_SYNAPSE_LLM_KEY ? 'environment' : null, baseUrl: synapse.BASE_URL, chatModel: synapse.CHAT_MODEL, transcriptionModel: synapse.TRANSCRIPTION_MODEL }));
+ipcMain.handle('config:get', () => ({ configured: Boolean(getKey()), source: keychain.get(app) ? 'keychain' : process.env.THALES_SYNAPSE_SYNAPSE_LLM_KEY ? 'environment' : null, baseUrl: synapse.BASE_URL, chatModel: synapse.CHAT_MODEL, transcriptionModel: synapse.TRANSCRIPTION_MODEL }));
 ipcMain.handle('config:save-key', async (_event, key) => {
   await synapse.validateKey(key);
   saveKey(key);

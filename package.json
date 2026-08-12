@@ -32,8 +32,8 @@
     ],
     "extraResources": [
       {
-        "from": "build/bin/SystemAudioCapture",
-        "to": "bin/SystemAudioCapture"
+        "from": "build/bin",
+        "to": "bin"
       }
     ],
     "mac": {
