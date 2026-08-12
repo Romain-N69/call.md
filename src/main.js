@@ -138,7 +138,7 @@ ipcMain.handle('meeting:start', async (_event, { title, language }) => {
 });
 ipcMain.handle('meeting:video-segment', (_event, { bytes, startedAt }) => {
   if (!activeMeeting) throw new Error('No active meeting');
-  fs.writeFileSync(path.join(activeMeeting.folder, `screen-${startedAt}.webm`), Buffer.from(bytes));
+  fs.appendFileSync(path.join(activeMeeting.folder, 'screen-full.webm'), Buffer.from(bytes));
   return true;
 });
 ipcMain.handle('meeting:segment', async (_event, { channel, bytes, startedAt }) => {
@@ -146,13 +146,14 @@ ipcMain.handle('meeting:segment', async (_event, { channel, bytes, startedAt }) 
   const file = path.join(activeMeeting.folder, `${channel}-${startedAt}.webm`);
   fs.writeFileSync(file, Buffer.from(bytes));
   const meeting = activeMeeting;
-  const work = (async () => {
-    const segments = await transcribe(file, meeting.language);
-    const offset = (startedAt - meeting.startedAt) / 1000;
-    db.addSegments(meeting.id, channel === 'mic' ? 'me' : 'them', offset, segments);
-    window.webContents.send('meeting:transcript', db.getTranscript(meeting.id));
-  })();
-  await track(work);
+  track((async () => {
+    try {
+      const segments = await transcribe(file, meeting.language);
+      const offset = (startedAt - meeting.startedAt) / 1000;
+      db.addSegments(meeting.id, channel === 'mic' ? 'me' : 'them', offset, segments);
+      window.webContents.send('meeting:transcript', db.getTranscript(meeting.id));
+    } catch (error) { window.webContents.send('meeting:error', error.message); }
+  })());
   return true;
 });
 ipcMain.handle('meeting:stop', async () => {
@@ -184,7 +185,7 @@ ipcMain.handle('meeting:delete', (_event, id) => {
 ipcMain.handle('meeting:retranscribe', async (_event, id, language = 'auto') => {
   const meeting = db.getMeeting(id);
   if (!meeting) throw new Error('Meeting not found');
-  const files = fs.readdirSync(meeting.folder).filter(file => /^(mic-|system-).+\.(webm|m4a)$/.test(file)).sort();
+  const files = fs.readdirSync(meeting.folder).filter(file => /^(mic-|system-).+\.(webm|wav)$/.test(file)).sort();
   if (!files.length) throw new Error('No source audio files were found');
   const segments = [];
   for (const file of files) {

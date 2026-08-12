@@ -20,6 +20,7 @@ async function transcribe(path, apiKey, options = {}) {
   if (options.language && options.language !== 'auto') form.append('language', options.language);
   if (options.prompt) form.append('prompt', options.prompt);
   form.append('temperature', '0');
+  if (model.startsWith('whisper-')) form.append('prompt', options.prompt || 'Natural conversation. Ignore silence, background noise, music, subtitles, and repeated outro phrases.');
   form.append('file', new Blob([fs.readFileSync(path)]), path.split('/').pop());
   const response = await fetch(`${BASE_URL}/audio/transcriptions`, {
     method: 'POST',

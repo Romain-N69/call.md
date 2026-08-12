@@ -34,8 +34,8 @@ function createRecorder(stream, channel) {
 }
 function createVideoRecorder(stream) {
   videoRecorder=new MediaRecorder(new MediaStream(stream.getVideoTracks()),{mimeType:'video/webm;codecs=vp9'});
-  videoRecorder.ondataavailable=event=>{ if(!event.data.size)return; const startedAt=Date.now()-segmentMs; sending=sending.then(async()=>api.meeting.sendVideoSegment({bytes:await event.data.arrayBuffer(),startedAt})).catch(e=>error(e.message)); };
-  videoRecorder.start(segmentMs);
+  videoRecorder.ondataavailable=event=>{ if(!event.data.size)return; sending=sending.then(async()=>api.meeting.sendVideoSegment({bytes:await event.data.arrayBuffer(),startedAt})).catch(e=>error(e.message)); };
+  videoRecorder.start(1000);
 }
 function meter(stream, element) {
   const context=new AudioContext(), analyser=context.createAnalyser(); analyser.fftSize=256; context.createMediaStreamSource(stream).connect(analyser); const data=new Uint8Array(analyser.frequencyBinCount);
