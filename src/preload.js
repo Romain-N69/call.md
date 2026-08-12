@@ -5,6 +5,7 @@ contextBridge.exposeInMainWorld('callLocal', {
     get: () => ipcRenderer.invoke('config:get'),
     saveKey: key => ipcRenderer.invoke('config:save-key', key),
     test: () => ipcRenderer.invoke('config:test'),
+    models: () => ipcRenderer.invoke('config:models'),
   },
   transcription: {
     get: () => ipcRenderer.invoke('transcription:get'),

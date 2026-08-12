@@ -27,7 +27,7 @@ async function transcribe(file, language = activeMeeting?.language || 'auto') {
     if (recognitionEngine === 'parakeet') return parakeetTranscribe(file, { modelsDir: config.modelsPath || modelsRoot() });
     return whisperTranscribe(file, { modelPath: selectedModel(config.modelsPath || modelsRoot(), config.model), language: config.language });
   }
-  return cleanSegments(await synapse.transcribe(file, getKey(), { language: config.language }));
+  return cleanSegments(await synapse.transcribe(file, getKey(), { language: config.language, model: config.synapseModel || synapse.TRANSCRIPTION_MODEL }));
 }
 
 function getKey() {
@@ -72,6 +72,7 @@ ipcMain.handle('config:save-key', async (_event, key) => {
   return { configured: true, source: 'keychain' };
 });
 ipcMain.handle('config:test', () => synapse.validateKey(getKey()));
+ipcMain.handle('config:models', async () => (await synapse.models(getKey())).filter(model => model.mode === 'audio_transcription' || /transcri|whisper|chirp|voxtral/i.test(model.id)));
 ipcMain.handle('transcription:get', () => ({ preferences: { ...preferences(), provider: preferences().provider || preferences().engine || 'synapse', recognitionEngine: preferences().recognitionEngine || 'whisper', modelsPath: configuredModelsRoot() }, models: modelState(configuredModelsRoot()), parakeet: parakeetState(configuredModelsRoot()) }));
 ipcMain.handle('transcription:save', (_event, value) => {
   if (!path.isAbsolute(value.modelsPath)) throw new Error('Models folder must be an absolute path');
