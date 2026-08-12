@@ -74,8 +74,9 @@ app.on('before-quit', () => db?.close());
 
 ipcMain.handle('config:get', () => ({ configured: Boolean(getKey()), source: keychain.get(app) ? 'keychain' : process.env.THALES_SYNAPSE_SYNAPSE_LLM_KEY ? 'environment' : null, baseUrl: synapse.BASE_URL, chatModel: synapse.CHAT_MODEL, transcriptionModel: synapse.TRANSCRIPTION_MODEL }));
 ipcMain.handle('config:save-key', async (_event, key) => {
-  await synapse.validateKey(key);
-  saveKey(key);
+  if (typeof key !== 'string' || !key.trim()) throw new Error('A Synapse key is required');
+  await synapse.validateKey(key.trim());
+  saveKey(key.trim());
   return { configured: true, source: 'keychain' };
 });
 ipcMain.handle('config:test', () => synapse.validateKey(getKey()));
@@ -114,10 +115,12 @@ ipcMain.handle('permissions:screen', async () => {
 });
 ipcMain.handle('meeting:start', async (_event, { title, language }) => {
   if (activeMeeting) throw new Error('A meeting is already recording');
+  if (typeof title !== 'string' || !title.trim()) throw new Error('A meeting title is required');
+  if (!/^(auto|fr|en|de|es|it|pt|nl|pl|uk|ja|zh|ko|ar|hi|tr|ru)$/.test(language || 'auto')) throw new Error('Unsupported meeting language');
   const id = randomUUID();
   const folder = path.join(recordingsRoot(), id);
   fs.mkdirSync(folder, { recursive: true });
-  activeMeeting = { id, title: title || 'Untitled meeting', folder, startedAt: Date.now(), language: language || 'auto' };
+  activeMeeting = { id, title: title.trim().slice(0, 120), folder, startedAt: Date.now(), language: language || 'auto' };
   db.startMeeting(activeMeeting);
   systemAudio = startSystemAudio({
     app, folder, startedAt: activeMeeting.startedAt,
@@ -160,24 +163,24 @@ ipcMain.handle('meeting:stop', async () => {
   if (!activeMeeting) return null;
   const meeting = activeMeeting;
   const progress = (stage, percent, detail) => window.webContents.send('meeting:processing', { stage, percent, detail });
-  progress('Saving recordings', 20, 'Closing microphone, system audio, and screen files…');
+  progress('Enregistrement des médias', 20, 'Fermeture du microphone, de l’audio système et de la vidéo…');
   systemAudio?.stop(); systemAudio = null;
   await new Promise(resolve => setTimeout(resolve, 1200));
-  progress('Finishing transcript', 55, pendingTranscriptions.size ? `Waiting for ${pendingTranscriptions.size} audio segment${pendingTranscriptions.size === 1 ? '' : 's'}…` : 'All audio segments are ready.');
+  progress('Finalisation de la transcription', 55, pendingTranscriptions.size ? `${pendingTranscriptions.size} segment${pendingTranscriptions.size === 1 ? '' : 's'} audio encore en cours…` : 'Tous les segments audio sont prêts.');
   await Promise.allSettled([...pendingTranscriptions]);
   db.finishMeeting(meeting.id, Date.now());
   const transcript = db.getTranscript(meeting.id);
   let summary = null;
   try {
-    progress('Creating summary', 82, 'Extracting key points and action items with Synapse…');
+    progress('Création du compte rendu', 82, 'Extraction des points clés et des actions avec Synapse…');
     summary = await synapse.summarize(transcript, getKey());
     db.saveSummary(meeting.id, summary);
   } catch (error) {
     console.error(error);
-    progress('Summary unavailable', 95, 'The recording and transcript are saved. You can retry later.');
+    progress('Compte rendu indisponible', 95, 'L’enregistrement et la transcription sont sauvegardés. Vous pourrez réessayer.');
   }
   activeMeeting = null;
-  progress('Meeting saved', 100, 'Recording, transcript, and notes are ready.');
+  progress('Réunion sauvegardée', 100, 'L’enregistrement, la transcription et les notes sont prêts.');
   return { ...meeting, transcript, summary };
 });
 ipcMain.handle('meeting:list', (_event, query) => db.listMeetings(query));

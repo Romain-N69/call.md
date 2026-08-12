@@ -1,36 +1,118 @@
 <!doctype html>
-<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Synapse Call Local</title><link rel="stylesheet" href="./styles.css"></head>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; media-src 'self' blob: file:; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <title>Synapse Call Local</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
 <body>
-  <div class="dragbar"><span>Synapse Call Local</span></div>
-  <main>
-    <header><div><small>PRIVATE MEETING INTELLIGENCE</small><h1>Synapse Call <i>Local</i></h1></div><span id="clock">00:00</span></header>
-    <nav class="tabs" aria-label="Application sections"><button class="tab active" data-view="recordView">Record</button><button class="tab" data-view="libraryView">Library</button><button class="tab" data-view="settingsView">Settings</button></nav>
+  <a class="skip-link" href="#mainContent">Aller au contenu</a>
+  <div class="dragbar" aria-hidden="true">
+    <span>Synapse Call Local</span>
+    <b>PRIVÉ · LOCAL</b>
+  </div>
 
-    <section id="recordView" class="view">
-      <section id="setup" class="panel setup">
-        <div><small>NEW SESSION</small><h2>Ready to listen</h2><p>Choose a window or screen. Video, microphone, and system audio are stored separately on this Mac.</p></div>
-        <label>Meeting title<input id="title" value="Untitled meeting"></label>
-        <label>Spoken language<select id="meetingLanguage"><option value="auto">Automatic detection</option><option value="fr">French</option><option value="en">English</option><option value="de">German</option><option value="es">Spanish</option><option value="it">Italian</option><option value="pt">Portuguese</option><option value="nl">Dutch</option><option value="pl">Polish</option><option value="uk">Ukrainian</option><option value="ja">Japanese</option><option value="zh">Chinese</option><option value="ko">Korean</option><option value="ar">Arabic</option><option value="hi">Hindi</option><option value="tr">Turkish</option><option value="ru">Russian</option></select></label>
-        <div class="permission-row"><span id="micStatus">Microphone</span><button id="micPermission" class="secondary">Allow</button><span id="screenStatus">Screen & system audio</span><button id="screenPermission" class="secondary">Allow</button></div>
-        <button id="start" class="record">Start meeting</button><p id="error" role="alert"></p>
+  <main id="mainContent" tabindex="-1">
+    <header class="app-header">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true"><i></i><i></i></span>
+        <div><h1>Synapse Call <em>Local</em></h1><p>Intelligence de réunion privée</p></div>
+      </div>
+      <div class="clock-wrap"><small>DURÉE</small><output id="clock" aria-live="off">00:00</output></div>
+    </header>
+
+    <nav class="tabs" aria-label="Sections de l’application" role="tablist">
+      <button id="recordTab" class="tab active" data-view="recordView" role="tab" aria-selected="true" aria-controls="recordView">
+        <svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="12" cy="12" r="7"/></svg>Enregistrer
+      </button>
+      <button id="libraryTab" class="tab" data-view="libraryView" role="tab" aria-selected="false" aria-controls="libraryView" tabindex="-1">
+        <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M4 5.5h16v14H4zM8 3v5M16 3v5M4 10h16"/></svg>Bibliothèque
+      </button>
+      <button id="settingsTab" class="tab" data-view="settingsView" role="tab" aria-selected="false" aria-controls="settingsView" tabindex="-1">
+        <svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.1-1l2-1.5-2-3.4-2.4 1a7 7 0 0 0-1.7-1L14.5 3h-5L9 6.1a7 7 0 0 0-1.7 1l-2.4-1-2 3.4L5 11a7 7 0 0 0 0 2l-2 1.5 2 3.4 2.4-1a7 7 0 0 0 1.7 1l.4 3.1h5l.4-3.1a7 7 0 0 0 1.7-1l2.4 1 2-3.4-2.1-1.5a7 7 0 0 0 .1-1z"/></svg>Réglages
+      </button>
+    </nav>
+
+    <section id="recordView" class="view" role="tabpanel" aria-labelledby="recordTab">
+      <section id="setup" class="panel setup" aria-labelledby="setupTitle">
+        <div class="signal-rail" aria-hidden="true"><i></i><i></i></div>
+        <div class="section-title">
+          <div><small>NOUVELLE SESSION</small><h2 id="setupTitle" tabindex="-1">Préparer la réunion</h2></div>
+          <span class="privacy-pill">Stockage local</span>
+        </div>
+        <p class="intro">Sélectionnez une fenêtre ou un écran. Le microphone, l’audio système et la vidéo sont enregistrés séparément sur ce Mac.</p>
+        <div class="form-grid">
+          <label for="title">Titre de la réunion<input id="title" value="Réunion sans titre" maxlength="120" autocomplete="off"></label>
+          <label for="meetingLanguage">Langue parlée<select id="meetingLanguage"><option value="auto">Détection automatique</option><option value="fr">Français</option><option value="en">Anglais</option><option value="de">Allemand</option><option value="es">Espagnol</option><option value="it">Italien</option><option value="pt">Portugais</option><option value="nl">Néerlandais</option><option value="pl">Polonais</option><option value="uk">Ukrainien</option><option value="ja">Japonais</option><option value="zh">Chinois</option><option value="ko">Coréen</option><option value="ar">Arabe</option><option value="hi">Hindi</option><option value="tr">Turc</option><option value="ru">Russe</option></select></label>
+        </div>
+        <div class="permission-row" aria-label="Autorisations requises">
+          <div class="permission-card"><span id="micStatus">Microphone · vérification…</span><button id="micPermission" class="secondary" type="button">Autoriser</button></div>
+          <div class="permission-card"><span id="screenStatus">Écran et audio système · vérification…</span><button id="screenPermission" class="secondary" type="button">Autoriser</button></div>
+        </div>
+        <p class="privacy-note"><svg aria-hidden="true" viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>Vos médias restent sur ce Mac. Seul l’audio à transcrire est envoyé si vous utilisez Synapse Cloud.</p>
+        <button id="start" class="primary record" type="button"><span class="button-dot" aria-hidden="true"></span>Démarrer la réunion</button>
+        <p id="error" class="error-message" role="alert" tabindex="-1"></p>
       </section>
-      <section id="live" class="live" hidden>
-        <aside class="panel channels"><small>CHANNELS</small><div class="meter"><span>YOU · MICROPHONE</span><b id="micMeter"></b></div><div class="meter"><span>THEM · SYSTEM AUDIO</span><b id="systemMeter"></b></div><button id="bookmarkLive" class="secondary">Bookmark moment</button><button id="stop">Finish meeting</button><p class="safe-copy">Your recordings are saved locally before the summary starts.</p></aside>
-        <article class="panel transcript"><div class="section-title"><h2>Live transcript</h2><span class="dot">REC</span></div><div class="metrics-strip"><span><b id="talkRatio">0%</b>You talk</span><span><b id="wpm">0</b>WPM</span><span><b id="questions">0</b>Questions</span><span><b id="monologue">0s</b>Longest turn</span></div><div id="nudge" class="nudge" hidden></div><div id="transcript"></div></article>
+
+      <section id="live" class="live" hidden aria-label="Réunion en cours">
+        <aside class="panel channels">
+          <div class="live-badge"><span aria-hidden="true"></span>Enregistrement en cours</div>
+          <h2>Canaux audio</h2>
+          <div class="meter"><div><span>VOUS · MICROPHONE</span><output id="micValue">—</output></div><div class="meter-track"><b id="micMeter" role="progressbar" aria-label="Niveau du microphone" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"></b></div></div>
+          <div class="meter"><div><span>INTERLOCUTEURS · SYSTÈME</span><output id="systemValue">—</output></div><div class="meter-track system"><b id="systemMeter" role="progressbar" aria-label="Niveau de l’audio système" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"></b></div></div>
+          <div class="channel-actions"><button id="bookmarkLive" class="secondary" type="button">Ajouter un repère</button><button id="stop" class="danger" type="button">Terminer la réunion</button></div>
+          <p class="safe-copy">Les fichiers locaux sont finalisés avant la création du compte rendu.</p>
+        </aside>
+        <article class="panel transcript" aria-labelledby="transcriptTitle">
+          <div class="section-title"><div><small>TRANSCRIPTION DIRECTE</small><h2 id="transcriptTitle">Conversation</h2></div><span class="rec-indicator"><i aria-hidden="true"></i>DIRECT</span></div>
+          <div class="metrics-strip" aria-label="Indicateurs de conversation"><span><b id="talkRatio">0 %</b>Votre temps de parole</span><span><b id="wpm">0</b>Mots par minute</span><span><b id="questions">0</b>Questions</span><span><b id="monologue">0 s</b>Tour le plus long</span></div>
+          <div id="nudge" class="nudge" hidden role="status"></div>
+          <div id="transcript" aria-live="polite" aria-relevant="additions"><div class="empty-state compact"><strong>En attente de paroles</strong><p>La transcription apparaîtra ici après quelques secondes.</p></div></div>
+        </article>
       </section>
     </section>
 
-    <section id="libraryView" class="view" hidden>
-      <section class="panel library"><div class="section-title"><div><small>LOCAL ARCHIVE</small><h2>Meeting library</h2></div><input id="search" type="search" placeholder="Search titles, notes, summaries, transcripts"></div><div id="meetings"></div></section>
+    <section id="libraryView" class="view" role="tabpanel" aria-labelledby="libraryTab" hidden>
+      <section class="panel library" aria-labelledby="libraryTitle">
+        <div class="section-title"><div><small>ARCHIVE LOCALE</small><h2 id="libraryTitle" tabindex="-1">Bibliothèque</h2><p>Retrouvez les enregistrements, transcriptions et comptes rendus stockés sur ce Mac.</p></div><label class="search-field" for="search"><span class="sr-only">Rechercher dans les réunions</span><svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m16 16 4 4"/></svg><input id="search" type="search" placeholder="Rechercher une réunion…" autocomplete="off"></label></div>
+        <div id="meetings" aria-live="polite"><div class="meeting-skeleton" aria-label="Chargement des réunions"><i></i><i></i><i></i></div></div>
+      </section>
     </section>
 
-    <section id="settingsView" class="view" hidden>
-      <section class="panel settings"><small>TRANSCRIPTION</small><h2>Speech model</h2><p>Choose the recognition engine and local model. Language is selected for each new meeting.</p><label>Speech models folder<div class="path-field"><input id="modelsPath" spellcheck="false"><button id="chooseModelsPath" type="button" class="secondary">Choose folder…</button></div></label><label>Speech Recognition Engine<select id="recognitionEngine"><option value="whisper">Whisper</option><option value="parakeet">Parakeet</option></select></label><div class="engine-choice"><label><input type="radio" name="provider" value="synapse"> Synapse Cloud</label><label><input type="radio" name="provider" value="local"> Local · Apple Silicon</label></div><div id="synapseModels" class="model-cards" hidden></div><div id="localModels" class="model-cards"></div><div id="parakeetStatus" class="connection-status" hidden></div><button id="saveTranscription">Use these settings</button></section><section class="panel settings"><small>CONNECTION</small><h2>Thales Synapse</h2><p>The API key is encrypted with macOS Keychain. It is never stored in SQLite or exported.</p><div id="keyStatus" class="connection-status">Checking connection…</div><label>Synapse key<input id="key" type="password" placeholder="THALES_SYNAPSE_SYNAPSE_LLM_KEY"></label><button id="saveKey">Validate & save to Keychain</button><button id="testKey" class="secondary">Test saved key</button><div id="models" class="model-info"></div></section>
+    <section id="settingsView" class="view" role="tabpanel" aria-labelledby="settingsTab" hidden>
+      <div class="settings-layout">
+        <section class="panel settings" aria-labelledby="speechTitle">
+          <small>TRANSCRIPTION</small><h2 id="speechTitle" tabindex="-1">Reconnaissance vocale</h2><p>Choisissez le moteur utilisé. La langue reste définie pour chaque réunion.</p>
+          <fieldset class="provider-choice"><legend>Lieu de traitement</legend><label><input type="radio" name="provider" value="synapse"><span><strong>Synapse Cloud</strong><small>Modèles Thales administrés</small></span></label><label><input type="radio" name="provider" value="local"><span><strong>Local · Apple Silicon</strong><small>Traitement hors ligne sur ce Mac</small></span></label></fieldset>
+          <label for="modelsPath">Dossier des modèles<div class="path-field"><input id="modelsPath" spellcheck="false" autocomplete="off"><button id="chooseModelsPath" type="button" class="secondary">Choisir…</button></div></label>
+          <label for="recognitionEngine">Moteur de reconnaissance<select id="recognitionEngine"><option value="whisper">Whisper</option><option value="parakeet">Parakeet</option></select></label>
+          <div id="synapseModels" class="model-cards" hidden aria-live="polite"></div><div id="localModels" class="model-cards" aria-live="polite"></div><div id="parakeetStatus" class="connection-status" hidden role="status"></div>
+          <button id="saveTranscription" class="primary" type="button">Enregistrer la transcription</button>
+        </section>
+        <section class="panel settings" aria-labelledby="synapseTitle">
+          <small>CONNEXION</small><h2 id="synapseTitle">Thales Synapse</h2><p>La clé API est protégée par le Trousseau macOS. Elle n’est jamais enregistrée dans SQLite ni exportée.</p>
+          <div id="keyStatus" class="connection-status" role="status">Vérification de la connexion…</div>
+          <label for="key">Clé Synapse<input id="key" type="password" placeholder="Coller une nouvelle clé" autocomplete="off"><span class="helper-text">Laissez ce champ vide pour conserver la clé actuelle.</span></label>
+          <div class="button-row"><button id="saveKey" class="primary" type="button">Valider et enregistrer</button><button id="testKey" class="secondary" type="button">Tester la clé actuelle</button></div>
+          <div id="models" class="model-info"></div>
+        </section>
+      </div>
     </section>
   </main>
 
-  <section id="processing" class="processing" hidden role="status" aria-live="polite" aria-atomic="true"><div class="processing-card"><div class="spinner" aria-hidden="true"></div><small>FINISHING MEETING</small><h2 id="processingStage">Saving recordings</h2><p id="processingDetail">Closing local media files…</p><div class="progress-track" aria-hidden="true"><b id="processingBar"></b></div><span id="processingPercent">0%</span></div></section>
+  <section id="processing" class="processing" hidden role="dialog" aria-modal="true" aria-labelledby="processingStage" aria-describedby="processingDetail">
+    <div class="processing-card">
+      <div class="spinner" aria-hidden="true"></div><small>FINALISATION</small><h2 id="processingStage">Enregistrement des médias</h2><p id="processingDetail" role="status" aria-live="polite">Fermeture des fichiers locaux…</p>
+      <div id="processingTrack" class="progress-track" role="progressbar" aria-label="Progression" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><b id="processingBar"></b></div><span id="processingPercent">0 %</span>
+      <p class="safe-copy">Vous pouvez laisser cette fenêtre ouverte. Vos fichiers sont déjà conservés localement.</p>
+    </div>
+  </section>
   <div id="toast" class="toast" hidden role="status" aria-live="polite"></div>
-  <dialog id="detail"><form method="dialog"><button class="close" aria-label="Close">×</button></form><div id="detailBody"></div></dialog>
+  <dialog id="actionDialog" class="action-dialog" aria-labelledby="actionTitle" aria-describedby="actionDescription"><form id="actionForm"><h2 id="actionTitle">Confirmer</h2><p id="actionDescription"></p><div id="actionField"></div><div class="button-row end"><button id="actionCancel" class="secondary" type="button">Annuler</button><button id="actionConfirm" class="primary" type="submit">Confirmer</button></div></form></dialog>
+  <dialog id="detail" aria-labelledby="detailTitle"><form method="dialog"><button class="close icon-button" aria-label="Fermer"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></svg></button></form><div id="detailBody"></div></dialog>
   <script src="./renderer.js"></script>
-</body></html>
+</body>
+</html>
