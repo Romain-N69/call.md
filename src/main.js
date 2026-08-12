@@ -5,7 +5,7 @@ const path = require('node:path');
 const { openDatabase } = require('./database');
 const { startSystemAudio } = require('./system-audio');
 const { markdown } = require('./insights');
-const { cleanSegments, localTranscribe, modelState, MODELS } = require('./transcription');
+const { cleanSegments, localTranscribe, modelState, selectedModel, MODELS } = require('./transcription');
 const synapse = require('./synapse');
 
 let window;
@@ -16,13 +16,13 @@ const keyPath = () => path.join(app.getPath('userData'), 'synapse-key.bin');
 const recordingsRoot = () => path.join(app.getPath('userData'), 'recordings');
 const modelsRoot = () => path.join(app.getPath('userData'), 'models');
 const preferencesPath = () => path.join(app.getPath('userData'), 'preferences.json');
-function preferences() { try { return JSON.parse(fs.readFileSync(preferencesPath(), 'utf8')); } catch { return { engine: 'synapse', model: 'small', language: 'auto' }; } }
+function preferences() { try { return JSON.parse(fs.readFileSync(preferencesPath(), 'utf8')); } catch { return { engine: 'synapse', model: 'small', language: 'auto', modelsPath: modelsRoot() }; } }
 function savePreferences(value) { fs.writeFileSync(preferencesPath(), JSON.stringify(value)); return value; }
+function configuredModelsRoot() { return preferences().modelsPath || modelsRoot(); }
 async function transcribe(file) {
   const config = preferences();
   if (config.engine === 'local') {
-    const model = MODELS[config.model] || MODELS.small;
-    return localTranscribe(file, { modelPath: path.join(modelsRoot(), model.file), language: config.language });
+    return localTranscribe(file, { modelPath: selectedModel(config.modelsPath || modelsRoot(), config.model), language: config.language });
   }
   return cleanSegments(await synapse.transcribe(file, getKey(), { language: config.language }));
 }
@@ -69,12 +69,20 @@ ipcMain.handle('config:save-key', async (_event, key) => {
   return { configured: true, source: 'keychain' };
 });
 ipcMain.handle('config:test', () => synapse.validateKey(getKey()));
-ipcMain.handle('transcription:get', () => ({ preferences: preferences(), models: modelState(modelsRoot()) }));
-ipcMain.handle('transcription:save', (_event, value) => savePreferences(value));
+ipcMain.handle('transcription:get', () => ({ preferences: { ...preferences(), modelsPath: configuredModelsRoot() }, models: modelState(configuredModelsRoot()) }));
+ipcMain.handle('transcription:save', (_event, value) => {
+  if (!path.isAbsolute(value.modelsPath)) throw new Error('Models folder must be an absolute path');
+  fs.mkdirSync(value.modelsPath, { recursive: true });
+  return savePreferences(value);
+});
+ipcMain.handle('transcription:choose-folder', async () => {
+  const result = await dialog.showOpenDialog(window, { title: 'Choose Whisper models folder', defaultPath: configuredModelsRoot(), properties: ['openDirectory', 'createDirectory'] });
+  return result.canceled ? null : result.filePaths[0];
+});
 ipcMain.handle('transcription:download', async (_event, modelId) => {
   const model = MODELS[modelId];
   if (!model) throw new Error('Unknown local model');
-  const destination = path.join(modelsRoot(), model.file);
+  const destination = path.join(configuredModelsRoot(), model.file);
   const { response } = await dialog.showMessageBox(window, { type: 'question', buttons: ['Download', 'Cancel'], defaultId: 0, cancelId: 1, title: model.label, message: `Download ${model.label}?`, detail: `${model.detail}. The model is stored locally and may require several GB.` });
   if (response !== 0) return false;
   const download = await fetch(model.url);

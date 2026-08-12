@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld('callLocal', {
     get: () => ipcRenderer.invoke('transcription:get'),
     save: value => ipcRenderer.invoke('transcription:save', value),
     download: model => ipcRenderer.invoke('transcription:download', model),
+    chooseFolder: () => ipcRenderer.invoke('transcription:choose-folder'),
   },
   permissions: {
     get: () => ipcRenderer.invoke('permissions:get'),

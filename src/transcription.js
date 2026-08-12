@@ -32,7 +32,20 @@ async function localTranscribe(input, { modelPath, language = 'auto', whisperBin
 }
 
 function modelState(modelsDir) {
-  return Object.fromEntries(Object.entries(MODELS).map(([id, model]) => [id, { ...model, installed: fs.existsSync(path.join(modelsDir, model.file)) }]));
+  const known = Object.fromEntries(Object.entries(MODELS).map(([id, model]) => [id, { ...model, path: path.join(modelsDir, model.file), installed: fs.existsSync(path.join(modelsDir, model.file)) }]));
+  if (!fs.existsSync(modelsDir)) return known;
+  for (const file of fs.readdirSync(modelsDir).filter(file => file.endsWith('.bin'))) {
+    if (Object.values(known).some(model => model.file === file)) continue;
+    const id = `custom:${file}`;
+    known[id] = { label: file.replace(/^ggml-/, '').replace(/\.bin$/, ''), file, path: path.join(modelsDir, file), detail: 'Existing whisper.cpp model', installed: true, custom: true };
+  }
+  return known;
 }
 
-module.exports = { MODELS, cleanSegments, localTranscribe, modelState };
+function selectedModel(modelsDir, id) {
+  const model = modelState(modelsDir)[id];
+  if (!model?.installed) throw new Error('Selected local model was not found');
+  return model.path;
+}
+
+module.exports = { MODELS, cleanSegments, localTranscribe, modelState, selectedModel };
