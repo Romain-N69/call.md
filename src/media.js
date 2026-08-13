@@ -16,6 +16,9 @@ function similarText(first, second) {
   left.forEach(token => { if (right.has(token)) common += 1; });
   return common / Math.max(left.size, right.size) >= 0.6 || (Math.min(left.size, right.size) <= 2 && common === Math.min(left.size, right.size));
 }
+function mergeOverlappingSegments(segments) {
+  return [...segments].sort((a, b) => a.start_time - b.start_time).filter((segment, index, all) => !all.slice(0, index).some(previous => previous.channel === segment.channel && Math.abs(previous.start_time - segment.start_time) < 1.5 && similarText(previous.text, segment.text)));
+}
 function suppressCrosstalk(segments, windowSeconds = 2.5) {
   return segments.filter(segment => segment.channel !== 'me' || !segments.some(other => other.channel === 'them' && Math.abs(other.start_time - segment.start_time) <= windowSeconds && similarText(segment.text, other.text)));
 }
@@ -32,6 +35,16 @@ async function isSystemAudioLeak(micFile, systemFile) {
 function nearestSystemChunk(folder, startedAt) {
   return fs.readdirSync(folder).map(file => ({ file, match: file.match(/^system-(\d+)\.wav$/) })).filter(item => item.match).map(item => ({ path: path.join(folder, item.file), distance: Math.abs(Number(item.match[1]) - startedAt) })).sort((a, b) => a.distance - b.distance)[0]?.path;
 }
+async function finalizeMicrophone(folder) {
+  const files = fs.readdirSync(folder).map(file => ({ file, match: file.match(/^mic-(\d+)\.webm$/) })).filter(item => item.match).sort((a, b) => Number(a.match[1]) - Number(b.match[1]));
+  if (!files.length) return null;
+  const list = path.join(folder, '.mic-concat.txt'), output = path.join(folder, 'mic-full.wav');
+  fs.writeFileSync(list, files.map(item => `file '${path.join(folder, item.file).replaceAll("'", "'\\''")}'`).join('\n'));
+  try {
+    await exec(ffmpeg, ['-y', '-v', 'error', '-f', 'concat', '-safe', '0', '-i', list, '-ar', '16000', '-ac', '1', '-c:a', 'pcm_s16le', '-af', 'highpass=f=90,lowpass=f=7600,alimiter=limit=0.95', output]);
+    return { path: output, startedAt: Number(files[0].match[1]) };
+  } finally { fs.rmSync(list, { force: true }); }
+}
 async function finalizeVideo(file) {
   if (!fs.existsSync(file) || !fs.statSync(file).size) return false;
   const fixed = `${file}.fixed.webm`;
@@ -45,4 +58,4 @@ async function finalizeVideo(file) {
   } catch (error) { fs.rmSync(fixed, { force: true }); throw error; }
 }
 
-module.exports = { finalizeVideo, isSystemAudioLeak, nearestSystemChunk, similarText, suppressCrosstalk };
+module.exports = { finalizeMicrophone, finalizeVideo, isSystemAudioLeak, mergeOverlappingSegments, nearestSystemChunk, similarText, suppressCrosstalk };

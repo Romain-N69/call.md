@@ -221,7 +221,7 @@ async function start() {
       const mic = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true }, video: false });
       const display = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
       streams = [mic, display];
-      const meeting = await api.meeting.start({ title, language: $('meetingLanguage').value });
+      const meeting = await api.meeting.start({ title, language: $('meetingLanguage').value, vocabulary: $('vocabulary').value });
       activeMeetingId = meeting.id;
       startedAt = meeting.startedAt;
       recording = true;

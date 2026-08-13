@@ -1,10 +1,15 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { similarText, suppressCrosstalk } = require('../src/media');
+const { mergeOverlappingSegments, similarText, suppressCrosstalk } = require('../src/media');
 
 test('detects equivalent text across microphone and system channels', () => {
   assert.equal(similarText('Bonjour, comment allez-vous ?', 'Bonjour comment allez vous'), true);
   assert.equal(similarText('Je valide le budget', 'Le serveur est indisponible'), false);
+});
+
+test('removes repeated overlapping windows', () => {
+  const result = mergeOverlappingSegments([{ channel: 'me', start_time: 1, text: 'Ship on Friday' }, { channel: 'me', start_time: 1.8, text: 'Ship on Friday.' }, { channel: 'me', start_time: 5, text: 'Next topic' }]);
+  assert.deepEqual(result.map(segment => segment.text), ['Ship on Friday', 'Next topic']);
 });
 
 test('keeps the system copy when both channels transcribe the same speech', () => {

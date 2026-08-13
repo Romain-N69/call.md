@@ -6,7 +6,7 @@ const { openDatabase } = require('./database');
 const keychain = require('./keychain');
 const { startSystemAudio } = require('./system-audio');
 const { markdown } = require('./insights');
-const { finalizeVideo, isSystemAudioLeak, nearestSystemChunk, suppressCrosstalk } = require('./media');
+const { finalizeMicrophone, finalizeVideo, isSystemAudioLeak, mergeOverlappingSegments, nearestSystemChunk, suppressCrosstalk } = require('./media');
 const { cleanSegments, parakeetState, parakeetTranscribe, whisperTranscribe, modelState, selectedModel, MODELS } = require('./transcription');
 const synapse = require('./synapse');
 
@@ -22,7 +22,7 @@ const preferencesPath = () => path.join(app.getPath('userData'), 'preferences.js
 function preferences() { try { return JSON.parse(fs.readFileSync(preferencesPath(), 'utf8')); } catch { return { provider: 'synapse', recognitionEngine: 'whisper', model: 'small', language: 'auto', modelsPath: modelsRoot() }; } }
 function savePreferences(value) { fs.writeFileSync(preferencesPath(), JSON.stringify(value)); return value; }
 function configuredModelsRoot() { return preferences().modelsPath || modelsRoot(); }
-async function transcribe(file, language = activeMeeting?.language || 'auto') {
+async function transcribe(file, language = activeMeeting?.language || 'auto', prompt = '', final = false) {
   if (!hasSpeech(file)) return [];
   const config = { ...preferences(), language };
   const provider = config.provider || config.engine || 'synapse';
@@ -31,7 +31,7 @@ async function transcribe(file, language = activeMeeting?.language || 'auto') {
     if (recognitionEngine === 'parakeet') return parakeetTranscribe(file, { modelsDir: config.modelsPath || modelsRoot() });
     return whisperTranscribe(file, { modelPath: selectedModel(config.modelsPath || modelsRoot(), config.model), language: config.language });
   }
-  const segments = await synapse.transcribe(file, getKey(), { language: config.language, model: config.synapseModel || synapse.TRANSCRIPTION_MODEL });
+  const segments = await synapse.transcribe(file, getKey(), { language: config.language, model: final ? synapse.TRANSCRIPTION_MODEL : config.synapseModel || synapse.TRANSCRIPTION_MODEL, prompt });
   segments.forEach(segment => { segment.expectedLatin = /^(fr|en|de|es|it|pt|nl|pl|tr)$/.test(config.language); });
   const cleaned = cleanSegments(segments);
   cleaned.detectedLanguage = segments.detectedLanguage;
@@ -134,14 +134,14 @@ ipcMain.handle('permissions:screen', async () => {
   await shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture');
   return false;
 });
-ipcMain.handle('meeting:start', async (_event, { title, language }) => {
+ipcMain.handle('meeting:start', async (_event, { title, language, vocabulary }) => {
   if (activeMeeting) throw new Error('A meeting is already recording');
   if (typeof title !== 'string' || !title.trim()) throw new Error('A meeting title is required');
   if (!/^(auto|fr|en|de|es|it|pt|nl|pl|uk|ja|zh|ko|ar|hi|tr|ru)$/.test(language || 'auto')) throw new Error('Unsupported meeting language');
   const id = randomUUID();
   const folder = path.join(recordingsRoot(), id);
   fs.mkdirSync(folder, { recursive: true });
-  activeMeeting = { id, title: title.trim().slice(0, 120), folder, startedAt: Date.now(), language: language || 'auto', requestedLanguage: language || 'auto' };
+  activeMeeting = { id, title: title.trim().slice(0, 120), folder, startedAt: Date.now(), language: language || 'auto', requestedLanguage: language || 'auto', vocabulary: String(vocabulary || '').trim().slice(0, 800) };
   db.startMeeting(activeMeeting);
   systemAudio = startSystemAudio({
     app, folder, startedAt: activeMeeting.startedAt,
@@ -194,20 +194,27 @@ ipcMain.handle('meeting:stop', async () => {
   await systemAudio?.stop(); systemAudio = null;
   progress('Finalisation de la transcription', 55, pendingTranscriptions.size ? `${pendingTranscriptions.size} segment${pendingTranscriptions.size === 1 ? '' : 's'} audio encore en cours…` : 'Tous les segments audio sont prêts.');
   await Promise.allSettled([...pendingTranscriptions]);
-  progress('Analyse des intervenants', 68, 'Séparation des voix et application des noms…');
+  progress('Transcription haute précision', 65, 'Relecture de la piste microphone complète avec son contexte…');
   try { await finalizeVideo(path.join(meeting.folder, 'screen-full.webm')); }
   catch (error) { console.error('Video finalization failed:', error); }
   db.finishMeeting(meeting.id, Date.now());
   let transcript = suppressCrosstalk(db.getTranscript(meeting.id));
-  const systemFile = path.join(meeting.folder, 'system-full.wav');
-  try {
-    const diarized = await synapse.diarize(systemFile, getKey(), meeting.language);
-    if (diarized.length) {
-      const speakers = [...new Set(diarized.map(segment => segment.speaker))];
-      const names = Object.fromEntries(speakers.map((speaker, index) => [speaker, `Intervenant ${index + 1}`]));
-      transcript = [...transcript.filter(segment => segment.channel === 'me'), ...diarized.map(segment => ({ channel: 'them', start_time: segment.start, end_time: segment.end, text: segment.text, speaker: names[segment.speaker] }))].sort((a, b) => a.start_time - b.start_time);
-    }
-  } catch (error) { console.error('Diarization failed:', error); }
+  const systemFile = path.join(meeting.folder, 'system-full.wav'), microphone = await finalizeMicrophone(meeting.folder);
+  const [finalMic, diarized] = await Promise.all([
+    microphone ? transcribe(microphone.path, meeting.language, meeting.vocabulary, true).catch(error => { console.error('Final microphone transcription failed:', error); return []; }) : [],
+    synapse.diarize(systemFile, getKey(), meeting.language).catch(error => { console.error('Diarization failed:', error); return []; }),
+  ]);
+  if (finalMic.length) {
+    const offset = Math.max(0, (microphone.startedAt - meeting.startedAt) / 1000);
+    transcript = [...transcript.filter(segment => segment.channel !== 'me'), ...finalMic.map(segment => ({ channel: 'me', start_time: offset + segment.start, end_time: offset + segment.end, text: segment.text }))].sort((a, b) => a.start_time - b.start_time);
+  }
+  progress('Analyse des intervenants', 75, 'Séparation des voix distantes…');
+  if (diarized.length) {
+    const speakers = [...new Set(diarized.map(segment => segment.speaker))];
+    const names = Object.fromEntries(speakers.map((speaker, index) => [speaker, `Intervenant ${index + 1}`]));
+    transcript = [...transcript.filter(segment => segment.channel === 'me'), ...diarized.map(segment => ({ channel: 'them', start_time: segment.start, end_time: segment.end, text: segment.text, speaker: names[segment.speaker] }))].sort((a, b) => a.start_time - b.start_time);
+  }
+  transcript = suppressCrosstalk(mergeOverlappingSegments(transcript));
   db.replaceTranscript(meeting.id, transcript);
   transcript = db.getTranscript(meeting.id);
   let summary = null;
@@ -240,15 +247,21 @@ ipcMain.handle('meeting:delete', (_event, id) => {
 ipcMain.handle('meeting:retranscribe', async (_event, id, language = 'auto') => {
   const meeting = db.getMeeting(id);
   if (!meeting) throw new Error('Meeting not found');
-  const files = fs.readdirSync(meeting.folder).filter(file => /^(mic-|system-).+\.(webm|wav)$/.test(file)).sort();
+  const files = fs.readdirSync(meeting.folder).filter(file => /^(mic-|system-\d).+\.(webm|wav)$/.test(file)).sort();
   if (!files.length) throw new Error('No source audio files were found');
   const segments = [];
+  const microphone = await finalizeMicrophone(meeting.folder);
+  if (microphone) {
+    const finalMic = await transcribe(microphone.path, language, '', true);
+    const offset = Math.max(0, (microphone.startedAt - meeting.started_at) / 1000);
+    finalMic.forEach(item => segments.push({ channel: 'me', start_time: offset + item.start, end_time: offset + item.end, text: item.text }));
+  }
   for (const file of files) {
     const match = file.match(/^(mic|system(?:_audio)?)-(\d+)/);
     if (!match) continue;
     const startedAt = Number(match[2]), channel = match[1] === 'mic' ? 'me' : 'them';
+    if (channel === 'me') continue;
     const source = path.join(meeting.folder, file);
-    if (channel === 'me' && await isSystemAudioLeak(source, nearestSystemChunk(meeting.folder, startedAt))) continue;
     const transcript = await transcribe(source, language);
     const offset = Math.max(0, (startedAt - meeting.started_at) / 1000);
     transcript.forEach(item => segments.push({ channel, start_time: offset + Number(item.start || 0), end_time: offset + Number(item.end || item.start || 0), text: item.text || '' }));
