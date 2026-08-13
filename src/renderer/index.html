@@ -63,14 +63,15 @@
           <h2>Canaux audio</h2>
           <div class="meter"><div><span>VOUS · MICROPHONE</span><output id="micValue">—</output></div><div class="meter-track"><b id="micMeter" role="progressbar" aria-label="Niveau du microphone" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"></b></div></div>
           <div class="meter"><div><span>INTERLOCUTEURS · SYSTÈME</span><output id="systemValue">—</output></div><div class="meter-track system"><b id="systemMeter" role="progressbar" aria-label="Niveau de l’audio système" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"></b></div></div>
-          <div class="speaker-names"><label for="speakerNames">Participants distants<input id="speakerNames" placeholder="Alex, Sam…" autocomplete="off"><span class="helper-text">Ordre de première prise de parole</span></label><button id="saveSpeakerNames" class="secondary" type="button">Appliquer les noms</button></div>
-          <div class="channel-actions"><button id="bookmarkLive" class="secondary" type="button">Ajouter un repère</button><button id="stop" class="danger" type="button">Terminer la réunion</button></div>
+          <div class="speaker-names"><small>VOIX RECONNUES</small><div id="liveSpeakers" class="speaker-chips"><span>Disponibles après analyse</span></div></div>
+          <div class="channel-actions"><button id="stop" class="danger" type="button">Terminer la réunion</button></div>
           <p class="safe-copy">Les fichiers locaux sont finalisés avant la création du compte rendu.</p>
         </aside>
         <article class="panel transcript" aria-labelledby="transcriptTitle">
           <div class="section-title"><div><small>TRANSCRIPTION DIRECTE</small><h2 id="transcriptTitle">Conversation</h2></div><span class="rec-indicator"><i aria-hidden="true"></i>DIRECT</span></div>
           <div class="metrics-strip" aria-label="Indicateurs de conversation"><span><b id="talkRatio">0 %</b>Votre temps de parole</span><span><b id="wpm">0</b>Mots par minute</span><span><b id="questions">0</b>Questions</span><span><b id="monologue">0 s</b>Tour le plus long</span></div>
           <div id="nudge" class="nudge" hidden role="status"></div>
+          <div class="timeline-wrap"><div class="timeline-head"><strong>Timeline</strong><button id="bookmarkLive" class="secondary compact-button" type="button">+ Repère maintenant</button></div><div id="liveTimeline" class="timeline" role="list" aria-label="Repères de la réunion"><div class="timeline-progress" id="timelineProgress"></div></div></div>
           <div id="transcript" aria-live="polite" aria-relevant="additions"><div class="empty-state compact"><strong>En attente de paroles</strong><p>La transcription apparaîtra ici après quelques secondes.</p></div></div>
         </article>
       </section>

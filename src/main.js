@@ -141,7 +141,7 @@ ipcMain.handle('meeting:start', async (_event, { title, language }) => {
   const id = randomUUID();
   const folder = path.join(recordingsRoot(), id);
   fs.mkdirSync(folder, { recursive: true });
-  activeMeeting = { id, title: title.trim().slice(0, 120), folder, startedAt: Date.now(), language: language || 'auto', requestedLanguage: language || 'auto', speakerNames: [] };
+  activeMeeting = { id, title: title.trim().slice(0, 120), folder, startedAt: Date.now(), language: language || 'auto', requestedLanguage: language || 'auto' };
   db.startMeeting(activeMeeting);
   systemAudio = startSystemAudio({
     app, folder, startedAt: activeMeeting.startedAt,
@@ -160,11 +160,6 @@ ipcMain.handle('meeting:start', async (_event, { title, language }) => {
   try { await systemAudio.ready; }
   catch (error) { systemAudio.stop(); systemAudio = null; db.deleteMeeting(activeMeeting.id); activeMeeting = null; throw error; }
   return activeMeeting;
-});
-ipcMain.handle('meeting:speaker-names', (_event, names) => {
-  if (!activeMeeting) return false;
-  activeMeeting.speakerNames = names.filter(Boolean).map(name => String(name).trim().slice(0, 40)).slice(0, 8);
-  return true;
 });
 ipcMain.handle('meeting:video-segment', (_event, { bytes, startedAt }) => {
   if (!activeMeeting) throw new Error('No active meeting');
@@ -209,7 +204,7 @@ ipcMain.handle('meeting:stop', async () => {
     const diarized = await synapse.diarize(systemFile, getKey(), meeting.language);
     if (diarized.length) {
       const speakers = [...new Set(diarized.map(segment => segment.speaker))];
-      const names = Object.fromEntries(speakers.map((speaker, index) => [speaker, meeting.speakerNames[index] || `Intervenant ${index + 1}`]));
+      const names = Object.fromEntries(speakers.map((speaker, index) => [speaker, `Intervenant ${index + 1}`]));
       transcript = [...transcript.filter(segment => segment.channel === 'me'), ...diarized.map(segment => ({ channel: 'them', start_time: segment.start, end_time: segment.end, text: segment.text, speaker: names[segment.speaker] }))].sort((a, b) => a.start_time - b.start_time);
     }
   } catch (error) { console.error('Diarization failed:', error); }
@@ -233,6 +228,10 @@ ipcMain.handle('meeting:get', (_event, id) => db.getMeeting(id));
 ipcMain.handle('meeting:update', (_event, id, changes) => db.updateMeeting(id, changes));
 ipcMain.handle('meeting:bookmark', (_event, meetingId, atTime, note) => db.addBookmark(meetingId, atTime, note));
 ipcMain.handle('meeting:delete-bookmark', (_event, id) => db.deleteBookmark(id));
+ipcMain.handle('meeting:rename-speaker', (_event, meetingId, speaker, name) => {
+  if (!name?.trim()) throw new Error('A speaker name is required');
+  return db.renameSpeaker(meetingId, speaker, name.trim().slice(0, 40));
+});
 ipcMain.handle('meeting:delete', (_event, id) => {
   const folder = db.deleteMeeting(id);
   if (folder) fs.rmSync(folder, { recursive: true, force: true });

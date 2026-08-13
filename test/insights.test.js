@@ -18,3 +18,8 @@ test('exports complete markdown', () => {
   assert.match(output, /00:12 — Decision/);
   assert.match(output, /\*\*You · 00:00\*\*/);
 });
+
+test('exports recognized speaker names', () => {
+  const output = markdown({ title: 'Call', started_at: 0 }, [{ channel: 'them', speaker: 'Nico', start_time: 2, end_time: 3, text: 'Ready.' }]);
+  assert.match(output, /\*\*Nico · 00:02\*\*/);
+});

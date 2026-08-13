@@ -92,6 +92,10 @@ function openDatabase(path) {
       return this.getMeeting(meetingId).bookmarks;
     },
     deleteBookmark(id) { db.prepare('DELETE FROM bookmarks WHERE id=?').run(id); },
+    renameSpeaker(meetingId, speaker, name) {
+      db.prepare('UPDATE transcript_segments SET speaker=? WHERE meeting_id=? AND speaker=?').run(name, meetingId, speaker);
+      return this.getMeeting(meetingId);
+    },
     deleteMeeting(id) {
       const meeting = db.prepare('SELECT folder FROM meetings WHERE id=?').get(id);
       db.prepare('DELETE FROM meetings WHERE id=?').run(id);

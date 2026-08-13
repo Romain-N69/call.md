@@ -2,6 +2,7 @@ const api = window.callLocal;
 const $ = id => document.getElementById(id);
 let streams = [], recorders = [], videoRecorder, segmentTimers = [], currentTranscript = [];
 let recording = false, stopping = false, startedAt = 0, activeMeetingId, timer, searchTimer, lastFocused;
+let liveBookmarks = [];
 let sending = Promise.resolve();
 const segmentMs = 5000;
 
@@ -92,10 +93,21 @@ function calculateMetrics(items) {
   const total = values.me.seconds + values.them.seconds;
   return { talkRatio: total ? Math.round(values.me.seconds / total * 100) : 0, wpm: values.me.seconds ? Math.round(values.me.words / values.me.seconds * 60) : 0, questions, longest: Math.round(longest) };
 }
+function speakerButton(item, meetingId = '') {
+  const name = item.channel === 'me' ? 'VOUS' : item.speaker || 'EUX';
+  return item.channel === 'me' || name === 'EUX' ? `<b class="speaker ${item.channel}">${escapeHtml(name)}</b>` : `<button class="speaker ${item.channel}" data-speaker="${escapeHtml(name)}" data-meeting="${meetingId}" title="Renommer ${escapeHtml(name)}">${escapeHtml(name)}</button>`;
+}
 function renderTranscript(items) {
+  const container = $('transcript'), appendOnly = items.length >= currentTranscript.length && currentTranscript.every((item, index) => item.start_time === items[index]?.start_time && item.text === items[index]?.text);
+  if (!items.length) container.innerHTML = '<div class="empty-state compact"><strong>En attente de paroles</strong><p>La transcription apparaîtra ici après quelques secondes.</p></div>';
+  else if (appendOnly) {
+    if (!currentTranscript.length) container.textContent = '';
+    const fragment = document.createDocumentFragment();
+    items.slice(currentTranscript.length).forEach(item => { const line = document.createElement('div'); line.className = 'line'; line.innerHTML = `${speakerButton(item)}<time>${formatTime(item.start_time)}</time><span>${escapeHtml(item.text)}</span>`; fragment.append(line); });
+    container.append(fragment);
+  } else container.innerHTML = items.map(item => `<div class="line">${speakerButton(item)}<time>${formatTime(item.start_time)}</time><span>${escapeHtml(item.text)}</span></div>`).join('');
   currentTranscript = items;
-  $('transcript').innerHTML = items.length ? items.map(item => `<div class="line"><b class="speaker ${item.channel}">${item.channel === 'me' ? 'VOUS' : escapeHtml(item.speaker || 'EUX')}</b><time>${formatTime(item.start_time)}</time><span>${escapeHtml(item.text)}</span></div>`).join('') : '<div class="empty-state compact"><strong>En attente de paroles</strong><p>La transcription apparaîtra ici après quelques secondes.</p></div>';
-  $('transcript').scrollTop = $('transcript').scrollHeight;
+  container.scrollTop = container.scrollHeight;
   const metric = calculateMetrics(items);
   $('talkRatio').textContent = `${metric.talkRatio} %`;
   $('wpm').textContent = metric.wpm;
@@ -219,7 +231,8 @@ async function start() {
       $('setup').hidden = true;
       $('live').hidden = false;
       $('stop').focus();
-      timer = setInterval(() => $('clock').textContent = formatTime((Date.now() - startedAt) / 1000), 1000);
+      liveBookmarks = []; renderTimeline();
+      timer = setInterval(() => { const seconds = (Date.now() - startedAt) / 1000; $('clock').textContent = formatTime(seconds); $('timelineProgress').style.transform = `scaleX(${Math.min(1, seconds / 3600)})`; }, 1000);
       toast('Réunion démarrée');
     } catch (error) {
       streams.forEach(stream => stream.getTracks().forEach(track => track.stop()));
@@ -262,12 +275,18 @@ async function stop() {
     $('stop').textContent = 'Terminer la réunion';
   }
 }
+function renderTimeline() {
+  const duration = Math.max(1, (Date.now() - startedAt) / 1000);
+  $('liveTimeline').querySelectorAll('.timeline-marker').forEach(marker => marker.remove());
+  liveBookmarks.forEach((bookmark, index) => { const marker = document.createElement('button'); marker.className = 'timeline-marker'; marker.style.left = `${Math.min(98, bookmark.at_time / duration * 100)}%`; marker.title = `${formatTime(bookmark.at_time)} · ${bookmark.note || 'Repère'}`; marker.setAttribute('aria-label', marker.title); marker.dataset.index = index; $('liveTimeline').append(marker); });
+}
 async function bookmarkLive() {
   if (!activeMeetingId) return;
-  const note = await ask({ title: 'Ajouter un repère', description: 'Ajoutez une note pour retrouver rapidement ce moment.', confirm: 'Enregistrer le repère', label: 'Note facultative' });
+  const atTime = (Date.now() - startedAt) / 1000;
+  const note = await ask({ title: `Repère à ${formatTime(atTime)}`, description: 'Ajoutez une note courte à ce point de la timeline.', confirm: 'Ajouter', label: 'Note facultative' });
   if (note === false) return;
-  await api.meeting.bookmark(activeMeetingId, (Date.now() - startedAt) / 1000, note.trim());
-  toast('Repère ajouté');
+  await api.meeting.bookmark(activeMeetingId, atTime, note.trim());
+  liveBookmarks.push({ at_time: atTime, note: note.trim() }); renderTimeline(); toast('Repère ajouté à la timeline');
 }
 async function loadHistory() {
   try {
@@ -282,12 +301,16 @@ async function openMeeting(id) {
   try {
     const meeting = await api.meeting.get(id);
     if (!meeting) return;
+    const duration = Math.max(1, (meeting.ended_at - meeting.started_at) / 1000);
+    const speakers = [...new Set(meeting.transcript.filter(item => item.channel === 'them' && item.speaker).map(item => item.speaker))];
     $('detailBody').innerHTML = `<div class="detail-head"><small>${dateLabel(meeting.started_at)} · ${durationLabel(meeting.started_at, meeting.ended_at)}</small><h2 id="detailTitle">${escapeHtml(meeting.title)}</h2></div>
       <div class="detail-actions"><button id="favoriteDetail" class="secondary ${meeting.favorite ? 'favorite' : ''}">${meeting.favorite ? 'Retirer des favoris' : 'Ajouter aux favoris'}</button><button id="exportDetail" class="primary">Exporter en Markdown</button><button id="retranscribeDetail" class="secondary">Relancer la transcription</button><button id="folderDetail" class="secondary">Ouvrir les fichiers</button><button id="deleteDetail" class="danger push-right">Supprimer</button></div>
+      <div class="speaker-toolbar"><span>Voix reconnues</span>${speakers.map(speaker => `<button class="speaker them" data-speaker="${escapeHtml(speaker)}" data-meeting="${id}" title="Renommer ${escapeHtml(speaker)}">${escapeHtml(speaker)}</button>`).join('') || '<small>Aucune voix séparée</small>'}</div>
+      <div class="detail-timeline timeline">${meeting.bookmarks.map(bookmark => `<button class="timeline-marker" style="left:${Math.min(98, bookmark.at_time / duration * 100)}%" title="${formatTime(bookmark.at_time)} · ${escapeHtml(bookmark.note || 'Repère')}" data-scroll-time="${bookmark.at_time}" aria-label="Aller au repère ${formatTime(bookmark.at_time)}"></button>`).join('')}</div>
       <div class="metrics-strip"><span><b>${meeting.metrics.talkRatio} %</b>Votre temps de parole</span><span><b>${meeting.metrics.wordsPerMinute}</b>Mots par minute</span><span><b>${meeting.metrics.questions}</b>Questions</span><span><b>${meeting.metrics.longestMonologue} s</b>Tour le plus long</span></div>
       <div class="detail-grid"><div><section class="summary-box"><h3>Compte rendu</h3><p>${escapeHtml(meeting.summary || 'Aucun compte rendu disponible. Relancez la transcription pour réessayer.')}</p><h3>Points clés</h3><ul class="list">${list(meeting.key_points).map(point => `<li>${escapeHtml(point)}</li>`).join('') || '<li>Aucun point clé détecté.</li>'}</ul><h3>Actions</h3><ul class="list actions">${list(meeting.action_items).map((item, index) => `<li><input id="action-${index}" type="checkbox"><label for="action-${index}">${escapeHtml(item)}</label></li>`).join('') || '<li>Aucune action détectée.</li>'}</ul></section>
         <label for="notesDetail">Notes<textarea id="notesDetail">${escapeHtml(meeting.notes)}</textarea></label><button id="saveNotes" class="primary">Enregistrer les notes</button><section class="bookmarks-box"><h3>Repères</h3><div id="bookmarkList">${meeting.bookmarks.map(bookmark => `<div class="bookmark"><span><time>${formatTime(bookmark.at_time)}</time>${escapeHtml(bookmark.note || 'Moment important')}</span><button class="danger icon-button" aria-label="Supprimer le repère à ${formatTime(bookmark.at_time)}" data-delete-bookmark="${bookmark.id}"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div>`).join('') || '<p>Aucun repère.</p>'}</div></section></div>
-        <div><h3>Transcription</h3><div class="detail-transcript">${meeting.transcript.map(item => `<div class="line"><b class="speaker ${item.channel}">${item.channel === 'me' ? 'VOUS' : escapeHtml(item.speaker || 'EUX')}</b><time>${formatTime(item.start_time)}</time><span>${escapeHtml(item.text)}</span></div>`).join('') || '<div class="empty-state compact"><strong>Aucune transcription</strong><p>Relancez la transcription à partir des fichiers audio conservés.</p></div>'}</div></div></div>`;
+        <div><h3>Transcription</h3><div class="detail-transcript">${meeting.transcript.map(item => `<div class="line" data-at="${item.start_time}">${speakerButton(item, id)}<time>${formatTime(item.start_time)}</time><span>${escapeHtml(item.text)}</span></div>`).join('') || '<div class="empty-state compact"><strong>Aucune transcription</strong><p>Relancez la transcription à partir des fichiers audio conservés.</p></div>'}</div></div></div>`;
     if (!$('detail').open) $('detail').showModal();
     $('detailTitle').focus();
     $('favoriteDetail').onclick = async () => { await api.meeting.update(id, { title: meeting.title, notes: $('notesDetail').value, favorite: !meeting.favorite }); toast(meeting.favorite ? 'Retiré des favoris' : 'Ajouté aux favoris'); await openMeeting(id); loadHistory(); };
@@ -297,6 +320,8 @@ async function openMeeting(id) {
     $('folderDetail').onclick = () => api.meeting.openFolder(meeting.folder);
     $('deleteDetail').onclick = async () => { const confirmed = await ask({ title: 'Supprimer cette réunion ?', description: 'La transcription, les notes et tous les enregistrements locaux seront supprimés définitivement.', confirm: 'Supprimer définitivement', danger: true }); if (!confirmed) return; await api.meeting.delete(id); $('detail').close(); toast('Réunion supprimée'); loadHistory(); };
     document.querySelectorAll('[data-delete-bookmark]').forEach(button => button.onclick = async () => { await api.meeting.deleteBookmark(Number(button.dataset.deleteBookmark)); toast('Repère supprimé'); openMeeting(id); });
+    document.querySelectorAll('[data-scroll-time]').forEach(marker => marker.onclick = () => { const target = [...document.querySelectorAll('.detail-transcript .line')].find(line => Number(line.dataset.at) >= Number(marker.dataset.scrollTime)); target?.scrollIntoView({ block: 'center' }); target?.classList.add('highlight'); setTimeout(() => target?.classList.remove('highlight'), 1200); });
+    document.querySelectorAll('[data-speaker][data-meeting]').forEach(button => button.onclick = async () => { const name = await ask({ title: 'Renommer cette voix', description: 'Le nouveau nom sera appliqué à toutes ses interventions.', confirm: 'Renommer', label: 'Nom', value: button.dataset.speaker }); if (!name || name === button.dataset.speaker) return; await api.meeting.renameSpeaker(id, button.dataset.speaker, name); toast(`Voix renommée ${name}`); openMeeting(id); });
   } catch (error) { toast(`Réunion indisponible. ${error.message}`); }
 }
 
@@ -330,7 +355,6 @@ $('saveTranscription').onclick = () => withLoading($('saveTranscription'), 'Enre
   toast('Réglages de transcription enregistrés');
 });
 $('start').onclick = start; $('stop').onclick = stop; $('bookmarkLive').onclick = bookmarkLive;
-$('saveSpeakerNames').onclick = async () => { const names = $('speakerNames').value.split(',').map(name => name.trim()).filter(Boolean); await api.meeting.setSpeakerNames(names); toast(names.length ? `${names.length} nom${names.length > 1 ? 's' : ''} enregistré${names.length > 1 ? 's' : ''}` : 'Noms des participants effacés'); };
 $('search').oninput = () => { clearTimeout(searchTimer); searchTimer = setTimeout(loadHistory, 180); };
 api.meeting.onTranscript(renderTranscript);
 api.meeting.onProcessing(processing);

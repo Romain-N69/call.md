@@ -33,7 +33,7 @@ function markdown(meeting, transcript, bookmarks = []) {
     '## Action items', '', ...actions.map(item => `- [ ] ${item}`), '',
     '## Bookmarks', '', ...bookmarks.map(item => `- ${formatTime(item.at_time)} — ${item.note || 'Important moment'}`), '',
     '## Transcript', '',
-    ...transcript.map(item => `**${item.channel === 'me' ? 'You' : 'Them'} · ${formatTime(item.start_time)}**  \n${item.text}\n`),
+    ...transcript.map(item => `**${item.channel === 'me' ? 'You' : item.speaker || 'Them'} · ${formatTime(item.start_time)}**  \n${item.text}\n`),
   ];
   return lines.join('\n');
 }
