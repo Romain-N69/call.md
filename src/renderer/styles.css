@@ -118,12 +118,12 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .meter-track { height: 8px; margin-top: 8px; overflow: hidden; border-radius: 999px; background: var(--line-soft); }
 .meter-track b { display: block; width: 100%; height: 100%; border-radius: inherit; background: var(--accent); transform: scaleX(.04); transform-origin: left; transition: transform .1s linear; }
 .meter-track.system b { background: var(--system); }
-.channel-actions { display: grid; gap: 9px; margin-top: 28px; }
+.speaker-names { margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--line-soft); }.speaker-names label { margin: 0 0 8px; }.speaker-names button { width: 100%; }.channel-actions { display: grid; gap: 9px; margin-top: 16px; }
 .safe-copy { margin: 12px 0 0; font-size: 11px; line-height: 1.5; }
 .transcript { min-height: 460px; }
 .transcript #transcript { margin-top: 12px; max-height: 410px; overflow: auto; scroll-behavior: smooth; }
 .line { display: grid; grid-template-columns: 50px 48px minmax(0, 1fr); gap: 8px; padding: 12px 2px; border-top: 1px solid var(--line-soft); }
-.line .speaker { align-self: start; width: max-content; border-radius: 5px; padding: 3px 5px; color: #803519; background: var(--accent-soft); font: 700 9px/1.3 ui-monospace, "SFMono-Regular", Menlo, monospace; }
+.line .speaker { align-self: start; max-width: 82px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border-radius: 5px; padding: 3px 5px; color: #803519; background: var(--accent-soft); font: 700 9px/1.3 ui-monospace, "SFMono-Regular", Menlo, monospace; }
 .line .speaker.them { color: #07566a; background: var(--system-soft); }
 .line time { color: var(--muted); font: 500 10px/1.9 ui-monospace, "SFMono-Regular", Menlo, monospace; font-variant-numeric: tabular-nums; }
 .line > span { color: var(--ink); font-size: 14px; line-height: 1.55; }

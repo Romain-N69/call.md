@@ -11,3 +11,8 @@ test('filters common silence and promotional hallucinations', () => {
   ]);
   assert.deepEqual(result, [{ start: 4, end: 7, text: 'Nous parlons bien français.' }]);
 });
+
+test('filters unexpected non-Latin scripts for a Latin-language meeting', () => {
+  const result = cleanSegments([{ text: '보내주신.', start: 0, end: 1, expectedLatin: true }, { text: 'That is a good job.', start: 1, end: 2, expectedLatin: true }]);
+  assert.deepEqual(result.map(segment => segment.text), ['That is a good job.']);
+});

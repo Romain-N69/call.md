@@ -94,7 +94,7 @@ function calculateMetrics(items) {
 }
 function renderTranscript(items) {
   currentTranscript = items;
-  $('transcript').innerHTML = items.length ? items.map(item => `<div class="line"><b class="speaker ${item.channel}">${item.channel === 'me' ? 'VOUS' : 'EUX'}</b><time>${formatTime(item.start_time)}</time><span>${escapeHtml(item.text)}</span></div>`).join('') : '<div class="empty-state compact"><strong>En attente de paroles</strong><p>La transcription apparaîtra ici après quelques secondes.</p></div>';
+  $('transcript').innerHTML = items.length ? items.map(item => `<div class="line"><b class="speaker ${item.channel}">${item.channel === 'me' ? 'VOUS' : escapeHtml(item.speaker || 'EUX')}</b><time>${formatTime(item.start_time)}</time><span>${escapeHtml(item.text)}</span></div>`).join('') : '<div class="empty-state compact"><strong>En attente de paroles</strong><p>La transcription apparaîtra ici après quelques secondes.</p></div>';
   $('transcript').scrollTop = $('transcript').scrollHeight;
   const metric = calculateMetrics(items);
   $('talkRatio').textContent = `${metric.talkRatio} %`;
@@ -287,7 +287,7 @@ async function openMeeting(id) {
       <div class="metrics-strip"><span><b>${meeting.metrics.talkRatio} %</b>Votre temps de parole</span><span><b>${meeting.metrics.wordsPerMinute}</b>Mots par minute</span><span><b>${meeting.metrics.questions}</b>Questions</span><span><b>${meeting.metrics.longestMonologue} s</b>Tour le plus long</span></div>
       <div class="detail-grid"><div><section class="summary-box"><h3>Compte rendu</h3><p>${escapeHtml(meeting.summary || 'Aucun compte rendu disponible. Relancez la transcription pour réessayer.')}</p><h3>Points clés</h3><ul class="list">${list(meeting.key_points).map(point => `<li>${escapeHtml(point)}</li>`).join('') || '<li>Aucun point clé détecté.</li>'}</ul><h3>Actions</h3><ul class="list actions">${list(meeting.action_items).map((item, index) => `<li><input id="action-${index}" type="checkbox"><label for="action-${index}">${escapeHtml(item)}</label></li>`).join('') || '<li>Aucune action détectée.</li>'}</ul></section>
         <label for="notesDetail">Notes<textarea id="notesDetail">${escapeHtml(meeting.notes)}</textarea></label><button id="saveNotes" class="primary">Enregistrer les notes</button><section class="bookmarks-box"><h3>Repères</h3><div id="bookmarkList">${meeting.bookmarks.map(bookmark => `<div class="bookmark"><span><time>${formatTime(bookmark.at_time)}</time>${escapeHtml(bookmark.note || 'Moment important')}</span><button class="danger icon-button" aria-label="Supprimer le repère à ${formatTime(bookmark.at_time)}" data-delete-bookmark="${bookmark.id}"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div>`).join('') || '<p>Aucun repère.</p>'}</div></section></div>
-        <div><h3>Transcription</h3><div class="detail-transcript">${meeting.transcript.map(item => `<div class="line"><b class="speaker ${item.channel}">${item.channel === 'me' ? 'VOUS' : 'EUX'}</b><time>${formatTime(item.start_time)}</time><span>${escapeHtml(item.text)}</span></div>`).join('') || '<div class="empty-state compact"><strong>Aucune transcription</strong><p>Relancez la transcription à partir des fichiers audio conservés.</p></div>'}</div></div></div>`;
+        <div><h3>Transcription</h3><div class="detail-transcript">${meeting.transcript.map(item => `<div class="line"><b class="speaker ${item.channel}">${item.channel === 'me' ? 'VOUS' : escapeHtml(item.speaker || 'EUX')}</b><time>${formatTime(item.start_time)}</time><span>${escapeHtml(item.text)}</span></div>`).join('') || '<div class="empty-state compact"><strong>Aucune transcription</strong><p>Relancez la transcription à partir des fichiers audio conservés.</p></div>'}</div></div></div>`;
     if (!$('detail').open) $('detail').showModal();
     $('detailTitle').focus();
     $('favoriteDetail').onclick = async () => { await api.meeting.update(id, { title: meeting.title, notes: $('notesDetail').value, favorite: !meeting.favorite }); toast(meeting.favorite ? 'Retiré des favoris' : 'Ajouté aux favoris'); await openMeeting(id); loadHistory(); };
@@ -330,6 +330,7 @@ $('saveTranscription').onclick = () => withLoading($('saveTranscription'), 'Enre
   toast('Réglages de transcription enregistrés');
 });
 $('start').onclick = start; $('stop').onclick = stop; $('bookmarkLive').onclick = bookmarkLive;
+$('saveSpeakerNames').onclick = async () => { const names = $('speakerNames').value.split(',').map(name => name.trim()).filter(Boolean); await api.meeting.setSpeakerNames(names); toast(names.length ? `${names.length} nom${names.length > 1 ? 's' : ''} enregistré${names.length > 1 ? 's' : ''}` : 'Noms des participants effacés'); };
 $('search').oninput = () => { clearTimeout(searchTimer); searchTimer = setTimeout(loadHistory, 180); };
 api.meeting.onTranscript(renderTranscript);
 api.meeting.onProcessing(processing);

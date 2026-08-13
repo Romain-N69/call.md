@@ -14,7 +14,7 @@ function openDatabase(path) {
     CREATE TABLE IF NOT EXISTS transcript_segments (
       id INTEGER PRIMARY KEY AUTOINCREMENT, meeting_id TEXT NOT NULL,
       channel TEXT NOT NULL CHECK(channel IN ('me', 'them')),
-      start_time REAL NOT NULL, end_time REAL NOT NULL, text TEXT NOT NULL,
+      start_time REAL NOT NULL, end_time REAL NOT NULL, text TEXT NOT NULL, speaker TEXT,
       FOREIGN KEY(meeting_id) REFERENCES meetings(id) ON DELETE CASCADE
     );
     CREATE TABLE IF NOT EXISTS bookmarks (
@@ -27,6 +27,7 @@ function openDatabase(path) {
   migrate(db, 'meetings', 'key_points', 'TEXT');
   migrate(db, 'meetings', 'notes', "TEXT DEFAULT ''");
   migrate(db, 'meetings', 'favorite', 'INTEGER DEFAULT 0');
+  migrate(db, 'transcript_segments', 'speaker', 'TEXT');
 
   return {
     startMeeting(meeting) {
@@ -42,10 +43,10 @@ function openDatabase(path) {
     },
     addSegments(meetingId, channel, offset, segments) {
       const insert = db.prepare(`INSERT INTO transcript_segments
-        (meeting_id,channel,start_time,end_time,text) VALUES (?,?,?,?,?)`);
+        (meeting_id,channel,start_time,end_time,text,speaker) VALUES (?,?,?,?,?,?)`);
       db.transaction(() => segments.forEach(segment => insert.run(
         meetingId, channel, offset + Number(segment.start || 0),
-        offset + Number(segment.end || segment.start || 0), segment.text || '',
+        offset + Number(segment.end || segment.start || 0), segment.text || '', segment.speaker || null,
       )))();
     },
     listMeetings(query = '') {
@@ -70,15 +71,15 @@ function openDatabase(path) {
       };
     },
     getTranscript(meetingId) {
-      return db.prepare(`SELECT channel,start_time,end_time,text
+      return db.prepare(`SELECT channel,start_time,end_time,text,speaker
         FROM transcript_segments WHERE meeting_id=? ORDER BY start_time`).all(meetingId);
     },
     replaceTranscript(meetingId, segments) {
       db.transaction(() => {
         db.prepare('DELETE FROM transcript_segments WHERE meeting_id=?').run(meetingId);
         const insert = db.prepare(`INSERT INTO transcript_segments
-          (meeting_id,channel,start_time,end_time,text) VALUES (?,?,?,?,?)`);
-        segments.forEach(segment => insert.run(meetingId, segment.channel, segment.start_time, segment.end_time, segment.text));
+          (meeting_id,channel,start_time,end_time,text,speaker) VALUES (?,?,?,?,?,?)`);
+        segments.forEach(segment => insert.run(meetingId, segment.channel, segment.start_time, segment.end_time, segment.text, segment.speaker || null));
       })();
     },
     updateMeeting(id, changes) {

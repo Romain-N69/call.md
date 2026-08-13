@@ -1,4 +1,7 @@
+const { execFile } = require('node:child_process');
 const fs = require('node:fs');
+const { promisify } = require('node:util');
+const exec = promisify(execFile);
 
 const BASE_URL = 'https://llm.synapse.thalescloud.io/v1';
 const TRANSCRIPTION_MODEL = 'whisper-1@v2-large';
@@ -31,9 +34,28 @@ async function transcribe(path, apiKey, options = {}) {
   });
   if (!response.ok) throw new Error(`Transcription failed: ${response.status} ${await response.text()}`);
   const result = await response.json();
-  return result.segments?.length
-    ? result.segments
-    : [{ start: 0, end: result.duration || 0, text: result.text || '' }];
+  const segments = result.segments?.length ? result.segments : [{ start: 0, end: result.duration || 0, text: result.text || '' }];
+  segments.detectedLanguage = result.language || result.detected_language;
+  return segments;
+}
+
+function speakerSegments(result) {
+  return (result.segments || []).map(segment => ({ start: Number(segment.start || 0), end: Number(segment.end || segment.start || 0), text: segment.text || '', speaker: segment.speaker || 'speaker_0' }));
+}
+async function diarize(path, apiKey, language = 'auto') {
+  const compressed = `${path}.diarize.mp3`;
+  try {
+    await exec('/opt/homebrew/bin/ffmpeg', ['-y', '-v', 'error', '-i', path, '-ac', '1', '-ar', '16000', '-b:a', '32k', compressed]);
+    const form = new FormData();
+    form.append('model', 'gpt-4o-transcribe-diarize');
+    form.append('response_format', 'diarized_json');
+    form.append('chunking_strategy', 'auto');
+    if (language !== 'auto') form.append('language', language);
+    form.append('file', new Blob([fs.readFileSync(compressed)]), 'meeting.mp3');
+    const response = await request(`${BASE_URL}/audio/transcriptions`, { method: 'POST', headers: { Authorization: `Bearer ${apiKey}` }, body: form });
+    if (!response.ok) throw new Error(`Diarization failed: ${response.status} ${await response.text()}`);
+    return speakerSegments(await response.json());
+  } finally { fs.rmSync(compressed, { force: true }); }
 }
 
 async function summarize(transcript, apiKey) {
@@ -55,4 +77,4 @@ async function summarize(transcript, apiKey) {
   return JSON.parse((await response.json()).choices[0].message.content);
 }
 
-module.exports = { models, validateKey, transcribe, summarize, BASE_URL, TRANSCRIPTION_MODEL, CHAT_MODEL };
+module.exports = { models, validateKey, transcribe, diarize, speakerSegments, summarize, BASE_URL, TRANSCRIPTION_MODEL, CHAT_MODEL };

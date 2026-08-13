@@ -12,10 +12,11 @@ const MODELS = {
 
 function cleanSegments(segments) {
   const noise = /^(\s*\[?(music|musique|applause|silence|blank_audio|inaudible)\]?\s*[.!…]?\s*)$/i;
+  const unsupportedScript = /[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af\u0400-\u04ff\u0600-\u06ff]/u;
   const promotional = /^(thank(s| you) for watching|please subscribe|like and subscribe|sous-titres réalisés par)|amara\.org/i;
   return segments.filter(segment => {
     const text = String(segment.text || '').trim();
-    return text.length > 2 && !noise.test(text) && !promotional.test(text) && Number(segment.no_speech_prob || 0) < 0.55 && Number(segment.avg_logprob ?? 0) > -1.2;
+    return text.length > 2 && !noise.test(text) && !promotional.test(text) && !(segment.expectedLatin && unsupportedScript.test(text)) && Number(segment.no_speech_prob || 0) < 0.55 && Number(segment.avg_logprob ?? 0) > -1.2;
   }).map(segment => ({ start: Number(segment.start || segment.offsets?.from || 0) / (segment.offsets ? 1000 : 1), end: Number(segment.end || segment.offsets?.to || 0) / (segment.offsets ? 1000 : 1), text: String(segment.text).trim() }));
 }
 

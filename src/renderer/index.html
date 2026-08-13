@@ -63,6 +63,7 @@
           <h2>Canaux audio</h2>
           <div class="meter"><div><span>VOUS · MICROPHONE</span><output id="micValue">—</output></div><div class="meter-track"><b id="micMeter" role="progressbar" aria-label="Niveau du microphone" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"></b></div></div>
           <div class="meter"><div><span>INTERLOCUTEURS · SYSTÈME</span><output id="systemValue">—</output></div><div class="meter-track system"><b id="systemMeter" role="progressbar" aria-label="Niveau de l’audio système" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"></b></div></div>
+          <div class="speaker-names"><label for="speakerNames">Participants distants<input id="speakerNames" placeholder="Alex, Sam…" autocomplete="off"><span class="helper-text">Ordre de première prise de parole</span></label><button id="saveSpeakerNames" class="secondary" type="button">Appliquer les noms</button></div>
           <div class="channel-actions"><button id="bookmarkLive" class="secondary" type="button">Ajouter un repère</button><button id="stop" class="danger" type="button">Terminer la réunion</button></div>
           <p class="safe-copy">Les fichiers locaux sont finalisés avant la création du compte rendu.</p>
         </aside>

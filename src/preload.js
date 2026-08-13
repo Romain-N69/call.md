@@ -30,6 +30,7 @@ contextBridge.exposeInMainWorld('callLocal', {
     start: options => ipcRenderer.invoke('meeting:start', options),
     sendSegment: payload => ipcRenderer.invoke('meeting:segment', payload),
     sendVideoSegment: payload => ipcRenderer.invoke('meeting:video-segment', payload),
+    setSpeakerNames: names => ipcRenderer.invoke('meeting:speaker-names', names),
     stop: () => ipcRenderer.invoke('meeting:stop'),
     list: query => ipcRenderer.invoke('meeting:list', query),
     get: id => ipcRenderer.invoke('meeting:get', id),
