@@ -8,19 +8,23 @@ const { startSystemAudio } = require('./system-audio');
 const { markdown } = require('./insights');
 const { finalizeMicrophone, finalizeVideo, isSystemAudioLeak, mergeOverlappingSegments, nearestSystemChunk, suppressCrosstalk } = require('./media');
 const { cleanSegments, parakeetState, parakeetTranscribe, whisperTranscribe, modelState, selectedModel, MODELS } = require('./transcription');
+const { normalizeWritingOptions, polishInstructions, splitText, writingStats } = require('./writing');
 const synapse = require('./synapse');
 
 let window;
 let db;
 let activeMeeting;
+let activeWriting;
 let systemAudio;
 let pendingTranscriptions = new Set();
 let allowClose = false;
 const recordingsRoot = () => path.join(app.getPath('userData'), 'recordings');
 const modelsRoot = () => path.join(app.getPath('userData'), 'models');
 const preferencesPath = () => path.join(app.getPath('userData'), 'preferences.json');
+const writingRoot = () => path.join(app.getPath('userData'), 'writings');
 function preferences() { try { return JSON.parse(fs.readFileSync(preferencesPath(), 'utf8')); } catch { return { provider: 'synapse', recognitionEngine: 'whisper', model: 'small', language: 'auto', modelsPath: modelsRoot() }; } }
 function savePreferences(value) { fs.writeFileSync(preferencesPath(), JSON.stringify(value)); return value; }
+function validWritingId(id) { if (!/^[0-9a-f-]{36}$/.test(id || '')) throw new Error('Identifiant de texte invalide'); return id; }
 function configuredModelsRoot() { return preferences().modelsPath || modelsRoot(); }
 async function transcribe(file, language = activeMeeting?.language || 'auto', prompt = '', final = false) {
   if (!hasSpeech(file)) return [];
@@ -71,7 +75,7 @@ async function createWindow() {
     webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false },
   });
   window.on('close', event => {
-    if (!activeMeeting || allowClose) return;
+    if ((!activeMeeting && !activeWriting) || allowClose) return;
     event.preventDefault();
     window.webContents.send('app:close-requested', false);
   });
@@ -81,6 +85,7 @@ async function createWindow() {
 app.whenReady().then(async () => {
   fs.mkdirSync(recordingsRoot(), { recursive: true });
   fs.mkdirSync(modelsRoot(), { recursive: true });
+  fs.mkdirSync(writingRoot(), { recursive: true });
   db = openDatabase(path.join(app.getPath('userData'), 'meetings.db'));
   session.defaultSession.setDisplayMediaRequestHandler((_request, callback) => callback({}), { useSystemPicker: true });
   await createWindow();
@@ -88,7 +93,7 @@ app.whenReady().then(async () => {
 
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
 app.on('before-quit', event => {
-  if (activeMeeting && !allowClose) { event.preventDefault(); window.webContents.send('app:close-requested', true); return; }
+  if ((activeMeeting || activeWriting) && !allowClose) { event.preventDefault(); window.webContents.send('app:close-requested', true); return; }
   systemAudio?.stop(); db?.close();
 });
 
@@ -135,7 +140,7 @@ ipcMain.handle('permissions:screen', async () => {
   return false;
 });
 ipcMain.handle('meeting:start', async (_event, { title, language, vocabulary }) => {
-  if (activeMeeting) throw new Error('A meeting is already recording');
+  if (activeMeeting || activeWriting) throw new Error('Un autre enregistrement est déjà en cours');
   if (typeof title !== 'string' || !title.trim()) throw new Error('A meeting title is required');
   if (!/^(auto|fr|en|de|es|it|pt|nl|pl|uk|ja|zh|ko|ar|hi|tr|ru)$/.test(language || 'auto')) throw new Error('Unsupported meeting language');
   const id = randomUUID();
@@ -288,3 +293,74 @@ ipcMain.handle('meeting:export', async (_event, id) => {
   return file;
 });
 ipcMain.handle('meeting:open-folder', (_event, folder) => shell.openPath(folder));
+
+ipcMain.handle('writing:start', (_event, value) => {
+  if (activeWriting || activeMeeting) throw new Error('Un autre enregistrement est déjà en cours');
+  const options = normalizeWritingOptions(value), id = randomUUID(), createdAt = Date.now();
+  const folder = path.join(writingRoot(), id), audioPath = path.join(folder, 'mic-full.wav');
+  fs.mkdirSync(folder, { recursive: true });
+  activeWriting = { id, createdAt, folder, audioPath, offset: 0, options };
+  db.createWriting({ id, createdAt, audioPath, ...options });
+  return { id, createdAt };
+});
+ipcMain.handle('writing:segment', async (_event, { id, bytes }) => {
+  validWritingId(id);
+  if (!activeWriting || id !== activeWriting.id) throw new Error('Aucune dictée active');
+  if (!bytes || !Number.isFinite(bytes.byteLength) || bytes.byteLength > 20 * 1024 * 1024) throw new Error('Segment audio invalide');
+  const chunk = path.join(activeWriting.folder, `mic-${Date.now()}.webm`), offset = activeWriting.offset;
+  fs.writeFileSync(chunk, Buffer.from(bytes));
+  const segments = await transcribe(chunk, activeWriting.options.sourceLanguage);
+  const duration = segments.reduce((max, segment) => Math.max(max, Number(segment.end || 0)), 0);
+  activeWriting.offset += Math.max(duration, 0.1);
+  const text = segments.map(segment => segment.text).join(' ').trim(), writing = db.getWriting(id);
+  if (text) db.updateWriting(id, { verbatim: `${writing.verbatim} ${text}`.trim() });
+  return { text, offset, detectedLanguage: segments.detectedLanguage };
+});
+ipcMain.handle('writing:stop', async (_event, id) => {
+  validWritingId(id);
+  if (!activeWriting || id !== activeWriting.id) return db.getWriting(id);
+  const writing = activeWriting; activeWriting = null;
+  let verbatim = db.getWriting(id)?.verbatim || '';
+  try {
+    const microphone = fs.readdirSync(writing.folder).some(file => /^mic-\d+\.webm$/.test(file)) ? await finalizeMicrophone(writing.folder) : null;
+    const final = microphone ? await transcribe(microphone.path, writing.options.sourceLanguage, '', true) : [];
+    const text = final.map(segment => segment.text).join(' ').trim();
+    if (text) verbatim = text;
+  } catch (error) { console.error('Final writing transcription failed:', error); }
+  const updated = db.updateWriting(id, { verbatim, status: 'draft' });
+  return { ...updated, stats: writingStats(verbatim, writing.createdAt) };
+});
+ipcMain.handle('writing:polish', async (_event, id, value) => {
+  validWritingId(id);
+  if (!getKey()) throw new Error('Ajoutez une clé Synapse dans Réglages pour corriger le texte');
+  let writing = db.getWriting(id);
+  if (!writing && !activeWriting) {
+    const options = normalizeWritingOptions(value), createdAt = Date.now(), folder = path.join(writingRoot(), id || randomUUID());
+    fs.mkdirSync(folder, { recursive: true });
+    writing = db.createWriting({ id: id || path.basename(folder), createdAt, audioPath: path.join(folder, 'mic-full.wav'), ...options });
+  }
+  if (!writing) throw new Error('Dictée introuvable');
+  const options = normalizeWritingOptions({ ...writing, ...value });
+  const verbatim = String(value.verbatim ?? writing.verbatim).trim();
+  if (!verbatim) throw new Error('Dictez ou saisissez un texte avant de le corriger');
+  const chunks = splitText(verbatim), polished = [];
+  for (const chunk of chunks) polished.push(await synapse.complete([{ role: 'system', content: polishInstructions(options) }, { role: 'user', content: `<dictee>\n${chunk}\n</dictee>` }], getKey()));
+  return db.updateWriting(id, { ...options, verbatim, polished: polished.join('\n\n'), status: 'ready' });
+});
+ipcMain.handle('writing:update', (_event, id, value) => db.updateWriting(validWritingId(id), value));
+ipcMain.handle('writing:get', (_event, id) => db.getWriting(validWritingId(id)));
+ipcMain.handle('writing:list', () => db.listWritings());
+ipcMain.handle('writing:delete', (_event, id) => {
+  validWritingId(id);
+  const audioPath = db.deleteWriting(id);
+  if (audioPath) fs.rmSync(path.dirname(audioPath), { recursive: true, force: true });
+  return true;
+});
+ipcMain.handle('writing:export', async (_event, id) => {
+  const writing = db.getWriting(validWritingId(id));
+  if (!writing) throw new Error('Dictée introuvable');
+  const result = await dialog.showSaveDialog(window, { title: 'Exporter le texte', defaultPath: `${writing.title.replace(/[^a-z0-9-_ ]/gi, '').trim() || 'texte'}.md`, filters: [{ name: 'Markdown', extensions: ['md'] }, { name: 'Texte', extensions: ['txt'] }] });
+  if (result.canceled) return null;
+  fs.writeFileSync(result.filePath, writing.polished || writing.verbatim);
+  return result.filePath;
+});

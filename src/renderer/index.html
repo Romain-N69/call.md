@@ -28,6 +28,9 @@
       <button id="recordTab" class="tab active" data-view="recordView" role="tab" aria-selected="true" aria-controls="recordView">
         <svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="12" cy="12" r="7"/></svg>Enregistrer
       </button>
+      <button id="writeTab" class="tab" data-view="writeView" role="tab" aria-selected="false" aria-controls="writeView" tabindex="-1">
+        <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3zM5 11a7 7 0 0 0 14 0M12 18v3M8 21h8"/></svg>Écrire
+      </button>
       <button id="libraryTab" class="tab" data-view="libraryView" role="tab" aria-selected="false" aria-controls="libraryView" tabindex="-1">
         <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M4 5.5h16v14H4zM8 3v5M16 3v5M4 10h16"/></svg>Bibliothèque
       </button>
@@ -76,6 +79,36 @@
           <div id="transcript" aria-live="polite" aria-relevant="additions"><div class="empty-state compact"><strong>En attente de paroles</strong><p>La transcription apparaîtra ici après quelques secondes.</p></div></div>
         </article>
       </section>
+    </section>
+
+    <section id="writeView" class="view" role="tabpanel" aria-labelledby="writeTab" hidden>
+      <section class="voice-hero" aria-labelledby="writeTitle">
+        <div><small>ÉCRITURE VOCALE</small><h2 id="writeTitle" tabindex="-1">Parlez librement.<br><em>Publiez clairement.</em></h2><p>Synapse transforme votre dictée en texte fidèle, puis corrige la forme sans modifier les faits.</p></div>
+        <div class="speed-proof" aria-label="Gain de temps estimé"><strong id="savedTime">5×</strong><span>plus rapide que le clavier</span></div>
+      </section>
+      <section class="writing-layout">
+        <aside class="panel writing-controls" aria-labelledby="voiceSettingsTitle">
+          <div class="section-title"><div><small>01 · INTENTION</small><h3 id="voiceSettingsTitle">Préparer le texte</h3></div><span id="writingState" class="writing-state">Prêt</span></div>
+          <label for="writingTitle">Titre<input id="writingTitle" value="Nouveau texte vocal" maxlength="120" autocomplete="off"></label>
+          <div class="form-grid compact-grid"><label for="writingLanguage">Langue parlée<select id="writingLanguage"><option value="auto">Détection automatique</option><option value="fr">Français</option><option value="en">Anglais</option><option value="de">Allemand</option><option value="es">Espagnol</option><option value="it">Italien</option><option value="pt">Portugais</option><option value="nl">Néerlandais</option><option value="pl">Polonais</option><option value="uk">Ukrainien</option><option value="ja">Japonais</option><option value="zh">Chinois</option><option value="ko">Coréen</option><option value="ar">Arabe</option><option value="hi">Hindi</option><option value="tr">Turc</option><option value="ru">Russe</option><option value="sv">Suédois</option><option value="da">Danois</option><option value="no">Norvégien</option><option value="fi">Finnois</option><option value="cs">Tchèque</option><option value="ro">Roumain</option><option value="hu">Hongrois</option><option value="el">Grec</option><option value="he">Hébreu</option><option value="id">Indonésien</option><option value="vi">Vietnamien</option><option value="th">Thaï</option><option value="bg">Bulgare</option><option value="hr">Croate</option><option value="sk">Slovaque</option></select></label><label for="writingTarget">Langue du résultat<select id="writingTarget"><option value="auto">Même langue</option><option value="fr">Français</option><option value="en">Anglais</option><option value="de">Allemand</option><option value="es">Espagnol</option><option value="it">Italien</option><option value="pt">Portugais</option><option value="nl">Néerlandais</option><option value="pl">Polonais</option><option value="uk">Ukrainien</option><option value="ja">Japonais</option><option value="zh">Chinois</option><option value="ko">Coréen</option><option value="ar">Arabe</option><option value="hi">Hindi</option><option value="tr">Turc</option><option value="ru">Russe</option></select></label></div>
+          <fieldset class="choice-chips"><legend>Destination</legend><label><input type="radio" name="writingFormat" value="clean" checked><span>Texte</span></label><label><input type="radio" name="writingFormat" value="email"><span>E-mail</span></label><label><input type="radio" name="writingFormat" value="blog"><span>Article</span></label><label><input type="radio" name="writingFormat" value="social"><span>Réseaux</span></label><label><input type="radio" name="writingFormat" value="report"><span>Rapport</span></label><label><input type="radio" name="writingFormat" value="notes"><span>Notes</span></label></fieldset>
+          <label for="writingTone">Ton<select id="writingTone"><option value="natural">Naturel</option><option value="professional">Professionnel</option><option value="friendly">Chaleureux</option><option value="confident">Assuré</option><option value="concise">Concis</option><option value="persuasive">Persuasif</option></select></label>
+          <label for="writingIntensity">Niveau de réécriture<select id="writingIntensity"><option value="light">Légère · grammaire seulement</option><option value="balanced" selected>Équilibrée · fluide et fidèle</option><option value="strong">Forte · structure optimisée</option></select></label>
+          <details class="style-details"><summary>Apprendre mon style</summary><label for="styleExample">Exemple de votre écriture<textarea id="styleExample" placeholder="Collez un e-mail ou un texte représentatif…" maxlength="4000"></textarea><span class="helper-text">Enregistré localement. Seuls le ton, le rythme et la concision sont imités.</span></label></details>
+          <label class="switch-row"><input id="livePolish" type="checkbox" checked><span><strong>Correction au fil de la dictée</strong><small>Actualise le texte corrigé après chaque passage.</small></span></label>
+          <button id="dictate" class="primary dictate" type="button"><span class="mic-glyph" aria-hidden="true"></span><span>Commencer à dicter</span><kbd>⌘ D</kbd></button>
+          <p id="writingError" class="error-message" role="alert"></p>
+        </aside>
+        <article class="panel writing-editor" aria-labelledby="editorTitle">
+          <div class="editor-head"><div><small>02 · TEXTE</small><h3 id="editorTitle">Du brouillon au texte final</h3></div><div class="editor-tabs" role="tablist" aria-label="Versions du texte"><button id="verbatimTab" class="active" role="tab" aria-selected="true">Verbatim</button><button id="polishedTab" role="tab" aria-selected="false">Texte corrigé</button></div></div>
+          <div id="writingWave" class="writing-wave" hidden aria-label="Dictée en cours"><i></i><i></i><i></i><i></i><i></i><i></i><span id="writingClock">00:00</span></div>
+          <label class="editor-label" for="writingText"><span id="editorLabel">Vos mots, sans modification</span><textarea id="writingText" class="writing-text" placeholder="Commencez à parler ou écrivez ici…" spellcheck="true"></textarea></label>
+          <div class="writing-stats" aria-live="polite"><span><b id="writingWords">0</b> mots</span><span><b id="writingSaved">0</b> min gagnées</span><span id="writingLanguageLock">Langue automatique</span></div>
+          <div class="editor-actions"><button id="polish" class="primary" type="button">Corriger avec Synapse</button><button id="copyWriting" class="secondary" type="button"><svg aria-hidden="true" viewBox="0 0 24 24"><rect x="8" y="8" width="11" height="11" rx="2"/><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3"/></svg>Copier</button><button id="exportWriting" class="secondary" type="button">Exporter</button><button id="clearWriting" class="secondary" type="button">Nouveau</button></div>
+          <div class="trust-note"><strong>Deux versions, zéro perte.</strong><span>Le verbatim reste intact. Toute correction est réversible et modifiable.</span></div>
+        </article>
+      </section>
+      <section class="panel writing-history" aria-labelledby="writingHistoryTitle"><div class="section-title"><div><small>TEXTES RÉCENTS</small><h3 id="writingHistoryTitle">Reprendre une dictée</h3></div></div><div id="writings"><div class="empty-state compact"><strong>Aucun texte pour le moment</strong><p>Votre première dictée apparaîtra ici.</p></div></div></section>
     </section>
 
     <section id="libraryView" class="view" role="tabpanel" aria-labelledby="libraryTab" hidden>

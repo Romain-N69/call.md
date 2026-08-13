@@ -26,6 +26,17 @@ contextBridge.exposeInMainWorld('callLocal', {
     microphone: () => ipcRenderer.invoke('permissions:microphone'),
     screen: () => ipcRenderer.invoke('permissions:screen'),
   },
+  writing: {
+    start: options => ipcRenderer.invoke('writing:start', options),
+    sendSegment: payload => ipcRenderer.invoke('writing:segment', payload),
+    stop: id => ipcRenderer.invoke('writing:stop', id),
+    polish: (id, options) => ipcRenderer.invoke('writing:polish', id, options),
+    update: (id, changes) => ipcRenderer.invoke('writing:update', id, changes),
+    get: id => ipcRenderer.invoke('writing:get', id),
+    list: () => ipcRenderer.invoke('writing:list'),
+    delete: id => ipcRenderer.invoke('writing:delete', id),
+    export: id => ipcRenderer.invoke('writing:export', id),
+  },
   meeting: {
     start: options => ipcRenderer.invoke('meeting:start', options),
     sendSegment: payload => ipcRenderer.invoke('meeting:segment', payload),

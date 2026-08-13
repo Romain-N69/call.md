@@ -22,7 +22,14 @@ function openDatabase(path) {
       at_time REAL NOT NULL, note TEXT DEFAULT '',
       FOREIGN KEY(meeting_id) REFERENCES meetings(id) ON DELETE CASCADE
     );
+    CREATE TABLE IF NOT EXISTS writings (
+      id TEXT PRIMARY KEY, title TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
+      source_language TEXT NOT NULL DEFAULT 'auto', target_language TEXT NOT NULL DEFAULT 'auto',
+      format TEXT NOT NULL DEFAULT 'clean', tone TEXT NOT NULL DEFAULT 'natural', intensity TEXT NOT NULL DEFAULT 'balanced',
+      verbatim TEXT NOT NULL DEFAULT '', polished TEXT NOT NULL DEFAULT '', audio_path TEXT, status TEXT NOT NULL DEFAULT 'draft'
+    );
     CREATE INDEX IF NOT EXISTS transcript_meeting_time ON transcript_segments(meeting_id, start_time);
+    CREATE INDEX IF NOT EXISTS writings_updated ON writings(updated_at DESC);
   `);
   migrate(db, 'meetings', 'key_points', 'TEXT');
   migrate(db, 'meetings', 'notes', "TEXT DEFAULT ''");
@@ -100,6 +107,34 @@ function openDatabase(path) {
       const meeting = db.prepare('SELECT folder FROM meetings WHERE id=?').get(id);
       db.prepare('DELETE FROM meetings WHERE id=?').run(id);
       return meeting?.folder;
+    },
+    createWriting(writing) {
+      db.prepare(`INSERT INTO writings (id,title,created_at,updated_at,source_language,target_language,format,tone,intensity,audio_path,status)
+        VALUES (@id,@title,@createdAt,@createdAt,@sourceLanguage,@targetLanguage,@format,@tone,@intensity,@audioPath,'recording')`).run(writing);
+      return db.prepare('SELECT * FROM writings WHERE id=?').get(writing.id);
+    },
+    updateWriting(id, changes) {
+      const writing = db.prepare('SELECT * FROM writings WHERE id=?').get(id);
+      if (!writing) return null;
+      const next = {
+        title: String(changes.title ?? writing.title).trim().slice(0, 120) || writing.title,
+        sourceLanguage: changes.sourceLanguage ?? writing.source_language,
+        targetLanguage: changes.targetLanguage ?? writing.target_language,
+        format: changes.format ?? writing.format, tone: changes.tone ?? writing.tone,
+        intensity: changes.intensity ?? writing.intensity, verbatim: changes.verbatim ?? writing.verbatim,
+        polished: changes.polished ?? writing.polished, status: changes.status ?? writing.status,
+      };
+      db.prepare(`UPDATE writings SET title=@title,source_language=@sourceLanguage,target_language=@targetLanguage,format=@format,
+        tone=@tone,intensity=@intensity,verbatim=@verbatim,polished=@polished,status=@status,updated_at=@updatedAt WHERE id=@id`)
+        .run({ ...next, id, updatedAt: Date.now() });
+      return db.prepare('SELECT * FROM writings WHERE id=?').get(id);
+    },
+    getWriting(id) { return db.prepare('SELECT * FROM writings WHERE id=?').get(id); },
+    listWritings() { return db.prepare('SELECT * FROM writings ORDER BY updated_at DESC LIMIT 100').all(); },
+    deleteWriting(id) {
+      const writing = db.prepare('SELECT audio_path FROM writings WHERE id=?').get(id);
+      db.prepare('DELETE FROM writings WHERE id=?').run(id);
+      return writing?.audio_path;
     },
     close() { db.close(); },
   };

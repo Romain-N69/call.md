@@ -58,6 +58,16 @@ async function diarize(path, apiKey, language = 'auto') {
   } finally { fs.rmSync(compressed, { force: true }); }
 }
 
+async function complete(messages, apiKey, options = {}) {
+  const response = await request(`${BASE_URL}/chat/completions`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ model: options.model || CHAT_MODEL, temperature: options.temperature ?? 0.2, ...options.body, messages }),
+  });
+  if (!response.ok) throw new Error(`Writing failed: ${response.status} ${await response.text()}`);
+  return (await response.json()).choices?.[0]?.message?.content?.trim() || '';
+}
+
 async function summarize(transcript, apiKey) {
   if (!transcript.length) return null;
   const content = transcript.map(s => `[${s.channel === 'me' ? 'You' : 'Them'}] ${s.text}`).join('\n');
@@ -77,4 +87,4 @@ async function summarize(transcript, apiKey) {
   return JSON.parse((await response.json()).choices[0].message.content);
 }
 
-module.exports = { models, validateKey, transcribe, diarize, speakerSegments, summarize, BASE_URL, TRANSCRIPTION_MODEL, CHAT_MODEL };
+module.exports = { models, validateKey, transcribe, diarize, speakerSegments, complete, summarize, BASE_URL, TRANSCRIPTION_MODEL, CHAT_MODEL };

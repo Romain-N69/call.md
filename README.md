@@ -16,6 +16,10 @@ A local-first macOS meeting recorder rebuilt from the Call.md product model with
 - Persistent summaries, key points, action items, and Markdown export
 - Local meeting history and recording folders
 - Synapse key encrypted in macOS Keychain via Electron `safeStorage`
+- Voice writing workspace with live dictation and a final high-accuracy pass
+- Separate verbatim and polished versions so the source is always preserved
+- Grammar correction, six output formats, six tones, three rewrite strengths, and optional style examples
+- 30+ spoken languages, output translation, copy, Markdown/text export, and local writing history
 
 No VideoDB API, SDK, binary, account, or key is used.
 

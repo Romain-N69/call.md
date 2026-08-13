@@ -3,8 +3,10 @@ const $ = id => document.getElementById(id);
 let streams = [], recorders = [], videoRecorder, segmentTimers = [], currentTranscript = [];
 let recording = false, stopping = false, startedAt = 0, activeMeetingId, timer, searchTimer, lastFocused;
 let liveBookmarks = [];
-let sending = Promise.resolve();
-const segmentMs = 5000;
+let writingStream, writingRecorder, writingTimer, writingSegmentTimer, writingStartedAt = 0, activeWritingId, writingRecording = false, writingBusy = false, polishPending = false, polishAgain = false;
+let writingDraft = { verbatim: '', polished: '' }, writingVersion = 'verbatim';
+let sending = Promise.resolve(), writingSending = Promise.resolve();
+const segmentMs = 5000, writingSegmentMs = 12000;
 
 function setError(message = '') {
   $('error').textContent = message;
@@ -59,6 +61,7 @@ function showView(id, focus = true) {
     tab.tabIndex = active ? 0 : -1;
   });
   if (id === 'libraryView') loadHistory();
+  if (id === 'writeView') loadWritings();
   if (focus) document.querySelector(`#${id} h2`)?.focus();
 }
 function ask({ title, description, confirm = 'Confirmer', danger = false, label, value = '' }) {
@@ -288,6 +291,103 @@ async function bookmarkLive() {
   await api.meeting.bookmark(activeMeetingId, atTime, note.trim());
   liveBookmarks.push({ at_time: atTime, note: note.trim() }); renderTimeline(); toast('Repère ajouté à la timeline');
 }
+function writingOptions() {
+  return { title: $('writingTitle').value, sourceLanguage: $('writingLanguage').value, targetLanguage: $('writingTarget').value, format: document.querySelector('input[name="writingFormat"]:checked').value, tone: $('writingTone').value, intensity: $('writingIntensity').value, styleExample: $('styleExample').value };
+}
+function writingStatus(text, active = false) {
+  $('writingState').textContent = text; $('writingState').classList.toggle('active', active);
+}
+function renderWriting(version = writingVersion) {
+  writingVersion = version;
+  const polished = version === 'polished';
+  $('verbatimTab').classList.toggle('active', !polished); $('polishedTab').classList.toggle('active', polished);
+  $('verbatimTab').setAttribute('aria-selected', !polished); $('polishedTab').setAttribute('aria-selected', polished);
+  $('editorLabel').textContent = polished ? 'Version corrigée, prête à utiliser' : 'Vos mots, sans modification';
+  $('writingText').value = writingDraft[version] || '';
+  $('writingText').placeholder = polished ? 'Cliquez sur « Corriger avec Synapse » pour créer cette version.' : 'Commencez à parler ou écrivez ici…';
+  const words = (writingDraft.verbatim.match(/\S+/g) || []).length, spoken = writingStartedAt ? (Date.now() - writingStartedAt) / 60000 : 0, saved = Math.max(0, words / 40 - spoken);
+  $('writingWords').textContent = words; $('writingSaved').textContent = saved.toFixed(1); $('savedTime').textContent = words > 20 && spoken ? `${Math.max(1, Math.round(words / 40 / spoken))}×` : '5×';
+}
+function persistStyle() {
+  localStorage.setItem('writing-style-example', $('styleExample').value);
+  localStorage.setItem('writing-options', JSON.stringify(writingOptions()));
+}
+function createWritingRecorder(stream) {
+  const recorder = new MediaRecorder(stream, { mimeType: 'audio/webm;codecs=opus' }); writingRecorder = recorder;
+  recorder.ondataavailable = event => {
+    clearTimeout(writingSegmentTimer);
+    if (!event.data.size || !activeWritingId) return;
+    writingBusy = true; writingStatus('Transcription…', true);
+    writingSending = writingSending.then(async () => {
+      const result = await api.writing.sendSegment({ id: activeWritingId, bytes: await event.data.arrayBuffer() });
+      if (result.text) writingDraft.verbatim = `${writingDraft.verbatim} ${result.text}`.trim();
+      if (result.detectedLanguage) $('writingLanguageLock').textContent = `Langue détectée · ${result.detectedLanguage.toUpperCase()}`;
+      if (writingVersion === 'verbatim') renderWriting('verbatim'); else $('writingWords').textContent = (writingDraft.verbatim.match(/\S+/g) || []).length;
+      if ($('livePolish').checked && writingDraft.verbatim) polishWriting(true);
+    }).catch(error => { $('writingError').textContent = `Transcription interrompue. ${error.message}`; }).finally(() => { writingBusy = false; if (writingRecording) writingStatus('À l’écoute', true); });
+  };
+  recorder.onstop = () => { if (writingRecorder === recorder) writingRecorder = null; if (writingRecording) createWritingRecorder(stream); };
+  recorder.start();
+  writingSegmentTimer = setTimeout(() => recorder.state !== 'inactive' && recorder.stop(), writingSegmentMs);
+}
+async function toggleDictation() {
+  if (writingRecording) return stopDictation();
+  $('writingError').textContent = '';
+  try {
+    writingStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }, video: false });
+    const writing = await api.writing.start(writingOptions()); activeWritingId = writing.id; writingStartedAt = writing.createdAt; writingDraft = { verbatim: '', polished: '' };
+    writingRecording = true; $('dictate').classList.add('recording'); $('dictate').querySelector('span:nth-child(2)').textContent = 'Arrêter la dictée'; $('writingWave').hidden = false; writingStatus('À l’écoute', true); renderWriting('verbatim'); createWritingRecorder(writingStream);
+    writingTimer = setInterval(() => { $('writingClock').textContent = formatTime((Date.now() - writingStartedAt) / 1000); renderWriting(writingVersion); }, 1000);
+  } catch (error) { $('writingError').textContent = `Impossible de démarrer la dictée. ${error.message}`; }
+}
+async function stopDictation() {
+  if (!writingRecording) return;
+  writingRecording = false; clearTimeout(writingSegmentTimer); clearInterval(writingTimer);
+  const finalRecorder = writingRecorder;
+  if (finalRecorder?.state !== 'inactive') {
+    await new Promise(resolve => { finalRecorder.addEventListener('stop', resolve, { once: true }); finalRecorder.stop(); });
+  }
+  writingStream?.getTracks().forEach(track => track.stop()); writingStream = null;
+  $('dictate').disabled = true; writingStatus('Finalisation…', true);
+  try {
+    await writingSending; const result = await api.writing.stop(activeWritingId);
+    writingDraft.verbatim = result?.verbatim || writingDraft.verbatim; renderWriting('verbatim'); writingStatus('Brouillon prêt');
+    if ($('livePolish').checked && writingDraft.verbatim) await polishWriting();
+    await loadWritings();
+  } catch (error) { $('writingError').textContent = `Finalisation interrompue. ${error.message}`; writingStatus('Brouillon conservé'); }
+  finally { $('dictate').disabled = false; $('dictate').classList.remove('recording'); $('dictate').querySelector('span:nth-child(2)').textContent = 'Commencer à dicter'; $('writingWave').hidden = true; }
+}
+async function polishWriting(background = false) {
+  if (writingVersion === 'verbatim') writingDraft.verbatim = $('writingText').value;
+  if (!writingDraft.verbatim.trim()) return toast('Dictez ou saisissez un texte avant de le corriger');
+  if (writingBusy && !background) return;
+  if (background && polishPending) { polishAgain = true; return; }
+  const button = $('polish'), run = async () => {
+    if (!activeWritingId) { const writing = await api.writing.start(writingOptions()); activeWritingId = writing.id; writingStartedAt = writing.createdAt; await api.writing.stop(activeWritingId); }
+    const source = writingDraft.verbatim; polishPending = true;
+    const result = await api.writing.polish(activeWritingId, { ...writingOptions(), verbatim: source });
+    if (source === writingDraft.verbatim) writingDraft.polished = result.polished;
+    renderWriting(background && writingVersion === 'verbatim' ? 'verbatim' : 'polished'); writingStatus('Texte corrigé'); persistStyle(); await loadWritings();
+  };
+  try { writingStatus('Correction…', true); background ? await run() : await withLoading(button, 'Correction…', run); }
+  catch (error) { $('writingError').textContent = `Correction impossible. ${error.message}`; writingStatus('Brouillon conservé'); }
+  finally { polishPending = false; if (polishAgain) { polishAgain = false; polishWriting(true); } }
+}
+async function loadWritings() {
+  const writings = await api.writing.list();
+  $('writings').innerHTML = writings.length ? writings.map(item => `<article class="writing-card"><button data-writing="${item.id}" type="button"><span><strong>${escapeHtml(item.title)}</strong><small>${dateLabel(item.updated_at)}</small></span><p>${escapeHtml(item.polished || item.verbatim || 'Dictée vide')}</p><b>${item.polished ? 'Corrigé' : 'Verbatim'}</b></button><button class="writing-delete" data-delete-writing="${item.id}" aria-label="Supprimer ${escapeHtml(item.title)}" type="button">×</button></article>`).join('') : '<div class="empty-state compact"><strong>Aucun texte pour le moment</strong><p>Votre première dictée apparaîtra ici.</p></div>';
+  document.querySelectorAll('[data-writing]').forEach(card => card.onclick = () => openWriting(card.dataset.writing));
+  document.querySelectorAll('[data-delete-writing]').forEach(button => button.onclick = async () => { if (!await ask({ title: 'Supprimer ce texte ?', description: 'Le texte et son enregistrement audio local seront supprimés définitivement.', confirm: 'Supprimer définitivement', danger: true })) return; await api.writing.delete(button.dataset.deleteWriting); if (activeWritingId === button.dataset.deleteWriting) newWriting(); await loadWritings(); toast('Texte supprimé'); });
+}
+async function openWriting(id) {
+  const item = await api.writing.get(id); if (!item) return;
+  activeWritingId = id; writingStartedAt = item.created_at; writingDraft = { verbatim: item.verbatim, polished: item.polished };
+  $('writingTitle').value = item.title; $('writingLanguage').value = item.source_language; $('writingTarget').value = item.target_language; $('writingTone').value = item.tone; $('writingIntensity').value = item.intensity;
+  document.querySelector(`input[name="writingFormat"][value="${item.format}"]`).checked = true; renderWriting(item.polished ? 'polished' : 'verbatim'); writingStatus(item.polished ? 'Texte corrigé' : 'Brouillon prêt');
+}
+function newWriting() {
+  activeWritingId = null; writingStartedAt = 0; writingDraft = { verbatim: '', polished: '' }; $('writingTitle').value = 'Nouveau texte vocal'; $('writingClock').textContent = '00:00'; $('writingLanguageLock').textContent = 'Langue automatique'; renderWriting('verbatim'); writingStatus('Prêt');
+}
 async function loadHistory() {
   try {
     const query = $('search').value.trim(), meetings = await api.meeting.list(query);
@@ -355,22 +455,31 @@ $('saveTranscription').onclick = () => withLoading($('saveTranscription'), 'Enre
   toast('Réglages de transcription enregistrés');
 });
 $('start').onclick = start; $('stop').onclick = stop; $('bookmarkLive').onclick = bookmarkLive;
+$('dictate').onclick = toggleDictation; $('polish').onclick = () => polishWriting();
+$('verbatimTab').onclick = () => renderWriting('verbatim'); $('polishedTab').onclick = () => renderWriting('polished');
+$('writingText').oninput = () => { writingDraft[writingVersion] = $('writingText').value; renderWriting(writingVersion); if (activeWritingId) api.writing.update(activeWritingId, { [writingVersion]: writingDraft[writingVersion] }); };
+$('copyWriting').onclick = async () => { const text = writingDraft[writingVersion].trim(); if (!text) return toast('Aucun texte à copier'); await navigator.clipboard.writeText(text); toast('Texte copié'); };
+$('exportWriting').onclick = async () => { if (!activeWritingId) return toast('Enregistrez d’abord une dictée'); const file = await api.writing.export(activeWritingId); if (file) toast('Texte exporté'); };
+$('clearWriting').onclick = async () => { if (writingRecording) return; if ((writingDraft.verbatim || writingDraft.polished) && !await ask({ title: 'Créer un nouveau texte ?', description: 'La dictée actuelle reste enregistrée dans les textes récents.', confirm: 'Créer un texte' })) return; newWriting(); };
+$('styleExample').oninput = persistStyle;
 $('search').oninput = () => { clearTimeout(searchTimer); searchTimer = setTimeout(loadHistory, 180); };
 api.meeting.onTranscript(renderTranscript);
 api.meeting.onProcessing(processing);
 api.meeting.onSystemLevel(db => updateMeter($('systemMeter'), $('systemValue'), (db + 60) / 60 * 100));
 api.meeting.onError(message => setError(`Erreur de capture. ${message}`));
 api.app.onCloseRequested(async quit => {
-  const confirmed = await ask({ title: 'Terminer avant de quitter ?', description: 'La réunion est encore enregistrée. Elle doit être finalisée pour conserver la vidéo et les dernières paroles.', confirm: 'Terminer et quitter', danger: true });
+  const confirmed = await ask({ title: 'Terminer avant de quitter ?', description: writingRecording ? 'La dictée doit être finalisée pour conserver les dernières paroles.' : 'La réunion doit être finalisée pour conserver la vidéo et les dernières paroles.', confirm: 'Terminer et quitter', danger: true });
   if (!confirmed) return;
-  await stop();
+  if (writingRecording) await stopDictation(); else await stop();
   await api.app.close(quit);
 });
 $('detail').addEventListener('close', () => lastFocused?.focus());
-document.addEventListener('keydown', event => { if (event.metaKey && event.key === '1') { event.preventDefault(); showView('recordView'); } if (event.metaKey && event.key === '2') { event.preventDefault(); showView('libraryView'); } if (event.metaKey && event.key === ',') { event.preventDefault(); showView('settingsView'); } });
+document.addEventListener('keydown', event => { if (event.metaKey && event.key === '1') { event.preventDefault(); showView('recordView'); } if (event.metaKey && event.key === '2') { event.preventDefault(); showView('writeView'); } if (event.metaKey && event.key === '3') { event.preventDefault(); showView('libraryView'); } if (event.metaKey && event.key.toLowerCase() === 'd' && !['INPUT','TEXTAREA'].includes(document.activeElement.tagName)) { event.preventDefault(); showView('writeView', false); toggleDictation(); } if (event.metaKey && event.key === ',') { event.preventDefault(); showView('settingsView'); } });
 
+try { const saved = JSON.parse(localStorage.getItem('writing-options') || '{}'); $('styleExample').value = localStorage.getItem('writing-style-example') || ''; ['writingLanguage','writingTarget','writingTone','writingIntensity'].forEach(id => { const key = { writingLanguage: 'sourceLanguage', writingTarget: 'targetLanguage', writingTone: 'tone', writingIntensity: 'intensity' }[id]; if (saved[key] && [...$(id).options].some(option => option.value === saved[key])) $(id).value = saved[key]; }); if (saved.format) document.querySelector(`input[name="writingFormat"][value="${saved.format}"]`)?.click(); } catch {}
 showView('recordView', false);
 refreshKeyStatus();
 refreshTranscription();
 refreshPermissions();
 loadHistory();
+loadWritings();
