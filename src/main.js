@@ -65,10 +65,10 @@ function saveKey(key) { keychain.set(app, key); }
 
 async function createWindow() {
   window = new BrowserWindow({
-    width: 1080,
-    height: 720,
-    minWidth: 760,
-    minHeight: 560,
+    width: 980,
+    height: 680,
+    minWidth: 720,
+    minHeight: 520,
     titleBarStyle: 'hiddenInset',
     trafficLightPosition: { x: 18, y: 18 },
     backgroundColor: '#dce8ec',
@@ -235,9 +235,10 @@ ipcMain.handle('meeting:stop', async () => {
   progress('Réunion sauvegardée', 100, 'L’enregistrement, la transcription et les notes sont prêts.');
   return { ...meeting, transcript, summary };
 });
-ipcMain.handle('meeting:list', (_event, query) => db.listMeetings(query));
+ipcMain.handle('meeting:list', (_event, query, archived) => db.listMeetings(query, archived));
 ipcMain.handle('meeting:get', (_event, id) => db.getMeeting(id));
 ipcMain.handle('meeting:update', (_event, id, changes) => db.updateMeeting(id, changes));
+ipcMain.handle('meeting:archive', (_event, id, archived) => db.archiveMeeting(id, archived));
 ipcMain.handle('meeting:bookmark', (_event, meetingId, atTime, note) => db.addBookmark(meetingId, atTime, note));
 ipcMain.handle('meeting:delete-bookmark', (_event, id) => db.deleteBookmark(id));
 ipcMain.handle('meeting:rename-speaker', (_event, meetingId, speaker, name) => {

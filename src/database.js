@@ -34,6 +34,7 @@ function openDatabase(path) {
   migrate(db, 'meetings', 'key_points', 'TEXT');
   migrate(db, 'meetings', 'notes', "TEXT DEFAULT ''");
   migrate(db, 'meetings', 'favorite', 'INTEGER DEFAULT 0');
+  migrate(db, 'meetings', 'archived', 'INTEGER DEFAULT 0');
   migrate(db, 'transcript_segments', 'speaker', 'TEXT');
 
   return {
@@ -56,12 +57,12 @@ function openDatabase(path) {
         offset + Number(segment.end || segment.start || 0), segment.text || '', segment.speaker || null,
       )))();
     },
-    listMeetings(query = '') {
+    listMeetings(query = '', archived = false) {
       const search = `%${query}%`;
       return db.prepare(`SELECT m.*, COUNT(t.id) AS segment_count
         FROM meetings m LEFT JOIN transcript_segments t ON t.meeting_id=m.id
-        WHERE (?='' OR m.title LIKE ? OR m.summary LIKE ? OR m.notes LIKE ? OR t.text LIKE ?)
-        GROUP BY m.id ORDER BY m.favorite DESC, m.started_at DESC`).all(query, search, search, search, search);
+        WHERE m.archived=? AND (?='' OR m.title LIKE ? OR m.summary LIKE ? OR m.notes LIKE ? OR t.text LIKE ?)
+        GROUP BY m.id ORDER BY m.favorite DESC, m.started_at DESC`).all(archived ? 1 : 0, query, search, search, search, search);
     },
     getMeeting(id) {
       const meeting = db.prepare('SELECT * FROM meetings WHERE id=?').get(id);
@@ -70,6 +71,7 @@ function openDatabase(path) {
       return {
         ...meeting,
         favorite: Boolean(meeting.favorite),
+        archived: Boolean(meeting.archived),
         key_points: parseList(meeting.key_points),
         action_items: parseList(meeting.action_items),
         transcript,
@@ -92,6 +94,10 @@ function openDatabase(path) {
     updateMeeting(id, changes) {
       db.prepare('UPDATE meetings SET title=?, notes=?, favorite=? WHERE id=?')
         .run(changes.title, changes.notes || '', changes.favorite ? 1 : 0, id);
+      return this.getMeeting(id);
+    },
+    archiveMeeting(id, archived) {
+      db.prepare('UPDATE meetings SET archived=? WHERE id=?').run(archived ? 1 : 0, id);
       return this.getMeeting(id);
     },
     addBookmark(meetingId, atTime, note) {
