@@ -28,6 +28,7 @@ function markdown(meeting, transcript, bookmarks = []) {
     '',
     `_${new Date(meeting.started_at).toLocaleString()}_`,
     '',
+    '## Personal notes', '', meeting.notes || 'No personal notes.', '',
     '## Summary', '', meeting.summary || 'No summary available.', '',
     '## Key points', '', ...points.map(item => `- ${item}`), '',
     '## Action items', '', ...actions.map(item => `- [ ] ${item}`), '',

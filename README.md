@@ -13,7 +13,12 @@ A local-first macOS meeting recorder rebuilt from the Call.md product model with
 - Post-meeting summary, key points, and actions through Synapse (`gpt-4o@2024-11-20`)
 - Local meeting library with full-text search, favorites, notes, and deletion
 - Live talk ratio, WPM, question count, long-turn coaching, and bookmarks
-- Persistent summaries, key points, action items, and Markdown export
+- Persistent summaries, key points, action items, and automatic local `meeting.md` files
+- Personal live notes merged into the final summary
+- Timestamp-cited questions and catch-up answers during and after meetings
+- Resident menu-bar controls, optional launch at login, and notes-ready notifications
+- Consent-based Zoom, Teams, Slack, FaceTime, WhatsApp, Discord, and browser-call detection
+- Automatic finalization after the detected meeting application releases the microphone
 - Local meeting history and recording folders
 - Synapse key encrypted in macOS Keychain via Electron `safeStorage`
 - Voice writing workspace with live dictation and a final high-accuracy pass

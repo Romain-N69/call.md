@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog, ipcMain, nativeTheme, session, shell, systemPreferences } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, nativeTheme, Notification, session, shell, systemPreferences, Tray } = require('electron');
 const { randomUUID } = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -9,6 +9,7 @@ const { markdown } = require('./insights');
 const { finalizeMicrophone, finalizeVideo, isSystemAudioLeak, mergeOverlappingSegments, nearestSystemChunk, suppressCrosstalk } = require('./media');
 const { cleanSegments, parakeetState, parakeetTranscribe, whisperTranscribe, modelState, selectedModel, MODELS } = require('./transcription');
 const { normalizeWritingOptions, polishInstructions, splitText, writingStats } = require('./writing');
+const { startMeetingDetection } = require('./meeting-detection');
 const synapse = require('./synapse');
 
 if (process.argv.includes('--force-dark-mode')) nativeTheme.themeSource = 'dark';
@@ -17,14 +18,18 @@ let db;
 let activeMeeting;
 let activeWriting;
 let systemAudio;
+let tray;
+let stopMeetingDetection;
 let pendingTranscriptions = new Set();
 let allowClose = false;
+let quitting = false;
+const notifications = new Set();
 const recordingsRoot = () => path.join(app.getPath('userData'), 'recordings');
 const modelsRoot = () => path.join(app.getPath('userData'), 'models');
 const preferencesPath = () => path.join(app.getPath('userData'), 'preferences.json');
 const writingRoot = () => path.join(app.getPath('userData'), 'writings');
 function preferences() { try { return JSON.parse(fs.readFileSync(preferencesPath(), 'utf8')); } catch { return { provider: 'synapse', recognitionEngine: 'whisper', model: 'small', language: 'auto', modelsPath: modelsRoot() }; } }
-function savePreferences(value) { fs.writeFileSync(preferencesPath(), JSON.stringify(value)); return value; }
+function savePreferences(value) { const next = { ...preferences(), ...value }; fs.writeFileSync(preferencesPath(), JSON.stringify(next)); return next; }
 function validWritingId(id) { if (!/^[0-9a-f-]{36}$/.test(id || '')) throw new Error('Identifiant de texte invalide'); return id; }
 function configuredModelsRoot() { return preferences().modelsPath || modelsRoot(); }
 async function transcribe(file, language = activeMeeting?.language || 'auto', prompt = '', final = false) {
@@ -57,6 +62,49 @@ function hasSpeech(file) {
   } catch { return true; }
 }
 function track(promise) { pendingTranscriptions.add(promise); promise.finally(() => pendingTranscriptions.delete(promise)); return promise; }
+function syncMeetingMarkdown(id) {
+  const meeting = db.getMeeting(id);
+  if (meeting) fs.writeFileSync(path.join(meeting.folder, 'meeting.md'), markdown(meeting, meeting.transcript, meeting.bookmarks));
+  return meeting;
+}
+function sendToWindow(channel, value) {
+  showWindow().then(() => window.webContents.send(channel, value));
+}
+async function showWindow() {
+  if (!window || window.isDestroyed()) await createWindow();
+  if (window.isMinimized()) window.restore();
+  window.show(); window.focus();
+}
+function notify({ title, body, onClick, action }) {
+  if (!Notification.isSupported()) return;
+  const notification = new Notification({ title, body, actions: action ? [{ type: 'button', text: action }] : [] });
+  notifications.add(notification);
+  const open = () => { notifications.delete(notification); onClick?.(); };
+  notification.on('click', open); notification.on('action', open);
+  notification.on('close', () => notifications.delete(notification));
+  notification.show();
+}
+const TRAY_ICONS = [
+  [1, 'iVBORw0KGgoAAAANSUhEUgAAABIAAAASCAYAAABWzo5XAAAAKklEQVR42mNgoCP4D8XDxCBkzTQxiGRDB4dBxGimiUE4DR01aEQbRBEAAG6fc40TP3iPAAAAAElFTkSuQmCC'],
+  [2, 'iVBORw0KGgoAAAANSUhEUgAAACQAAAAkCAYAAADhAJiYAAAAQElEQVR42u3WMQ4AIAgEQf7/ae0pDRiJswn1TUmE+lvpgICAqoeBTkHtUCCgsaCqYaBrUCAgICAgICCgR/6kP9u3as5ARwWRYgAAAABJRU5ErkJggg=='],
+];
+function createTray() {
+  const icon = nativeImage.createEmpty();
+  TRAY_ICONS.forEach(([scaleFactor, data]) => icon.addRepresentation({ scaleFactor, buffer: Buffer.from(data, 'base64') }));
+  icon.setTemplateImage(true); tray = new Tray(icon); updateTray();
+}
+function updateTray() {
+  if (!tray) return;
+  const recording = Boolean(activeMeeting);
+  tray.setToolTip(recording ? 'Synapse Call Local — enregistrement en cours' : 'Synapse Call Local');
+  tray.setTitle(recording ? ' ●' : '');
+  tray.setContextMenu(Menu.buildFromTemplate([
+    { label: 'Ouvrir Synapse Call Local', click: showWindow },
+    { label: recording ? 'Terminer et créer les notes' : 'Démarrer des notes de réunion', click: () => sendToWindow('app:meeting-toggle') },
+    { type: 'separator' },
+    { label: 'Quitter', click: () => app.quit() },
+  ]));
+}
 
 function getKey() {
   return keychain.get(app) || process.env.THALES_SYNAPSE_SYNAPSE_LLM_KEY || '';
@@ -76,10 +124,14 @@ async function createWindow() {
     webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false },
   });
   window.on('close', event => {
-    if ((!activeMeeting && !activeWriting) || allowClose) return;
-    event.preventDefault();
-    window.webContents.send('app:close-requested', false);
+    if ((activeMeeting || activeWriting) && !allowClose) {
+      event.preventDefault();
+      window.webContents.send('app:close-requested', false);
+    } else if (process.platform === 'darwin' && !quitting) {
+      event.preventDefault(); window.hide();
+    }
   });
+  window.on('closed', () => { window = null; });
   await window.loadFile(path.join(__dirname, 'renderer', 'index.html'));
   window.webContents.setZoomFactor(0.85);
 }
@@ -89,17 +141,37 @@ app.whenReady().then(async () => {
   fs.mkdirSync(modelsRoot(), { recursive: true });
   fs.mkdirSync(writingRoot(), { recursive: true });
   db = openDatabase(path.join(app.getPath('userData'), 'meetings.db'));
+  for (const archived of [false, true]) for (const meeting of db.listMeetings('', archived)) {
+    if (fs.existsSync(meeting.folder) && !fs.existsSync(path.join(meeting.folder, 'meeting.md'))) syncMeetingMarkdown(meeting.id);
+  }
   session.defaultSession.setDisplayMediaRequestHandler((_request, callback) => callback({}), { useSystemPicker: true });
-  await createWindow();
+  createTray();
+  stopMeetingDetection = startMeetingDetection({
+    helperPath: app.isPackaged ? path.join(process.resourcesPath, 'bin', 'MicrophoneMonitor') : path.join(app.getAppPath(), 'build', 'bin', 'MicrophoneMonitor'),
+    isCapturing: () => Boolean(activeMeeting || activeWriting),
+    onDetected: appName => {
+      if (preferences().meetingDetection === false) return;
+      notify({ title: 'Réunion détectée', body: `${appName} utilise le microphone. Démarrer les notes ?`, action: 'Démarrer', onClick: () => sendToWindow('app:meeting-toggle') });
+    },
+    onCallEnded: () => window?.webContents.send('app:external-call-ended'),
+  });
+  if (!app.getLoginItemSettings().wasOpenedAtLogin) await createWindow();
 });
 
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
 app.on('before-quit', event => {
-  if ((activeMeeting || activeWriting) && !allowClose) { event.preventDefault(); window.webContents.send('app:close-requested', true); return; }
-  systemAudio?.stop(); db?.close();
+  quitting = true;
+  if ((activeMeeting || activeWriting) && !allowClose) { event.preventDefault(); quitting = false; showWindow().then(() => window.webContents.send('app:close-requested', true)); return; }
+  stopMeetingDetection?.(); systemAudio?.stop(); db?.close();
 });
 
-ipcMain.handle('app:close', (_event, quit) => { allowClose = true; quit ? app.quit() : window.close(); });
+ipcMain.handle('app:close', (_event, quit) => { if (quit) { allowClose = true; app.quit(); } else window.close(); });
+ipcMain.handle('app:settings', () => ({ openAtLogin: app.getLoginItemSettings().openAtLogin, meetingDetection: preferences().meetingDetection !== false }));
+ipcMain.handle('app:save-settings', (_event, value) => {
+  app.setLoginItemSettings({ openAtLogin: Boolean(value.openAtLogin) });
+  savePreferences({ meetingDetection: Boolean(value.meetingDetection) });
+  return { openAtLogin: app.getLoginItemSettings().openAtLogin, meetingDetection: preferences().meetingDetection !== false };
+});
 ipcMain.handle('config:get', () => ({ configured: Boolean(getKey()), source: keychain.get(app) ? 'keychain' : process.env.THALES_SYNAPSE_SYNAPSE_LLM_KEY ? 'environment' : null, baseUrl: synapse.BASE_URL, chatModel: synapse.CHAT_MODEL, transcriptionModel: synapse.TRANSCRIPTION_MODEL }));
 ipcMain.handle('config:save-key', async (_event, key) => {
   if (typeof key !== 'string' || !key.trim()) throw new Error('A Synapse key is required');
@@ -165,7 +237,8 @@ ipcMain.handle('meeting:start', async (_event, { title, language, vocabulary }) 
     onError: message => window.webContents.send('meeting:error', message),
   });
   try { await systemAudio.ready; }
-  catch (error) { systemAudio.stop(); systemAudio = null; db.deleteMeeting(activeMeeting.id); activeMeeting = null; throw error; }
+  catch (error) { systemAudio.stop(); systemAudio = null; db.deleteMeeting(activeMeeting.id); activeMeeting = null; updateTray(); throw error; }
+  updateTray();
   return activeMeeting;
 });
 ipcMain.handle('meeting:video-segment', (_event, { bytes, startedAt }) => {
@@ -227,25 +300,37 @@ ipcMain.handle('meeting:stop', async () => {
   let summary = null;
   try {
     progress('Création du compte rendu', 88, 'Extraction des points clés et des actions avec Synapse…');
-    summary = await synapse.summarize(transcript, getKey());
+    summary = await synapse.summarize(transcript, getKey(), db.getMeeting(meeting.id)?.notes || '');
     db.saveSummary(meeting.id, summary);
   } catch (error) {
     console.error(error);
     progress('Compte rendu indisponible', 95, 'L’enregistrement et la transcription sont sauvegardés. Vous pourrez réessayer.');
   }
   activeMeeting = null;
+  const saved = syncMeetingMarkdown(meeting.id);
+  updateTray();
   progress('Réunion sauvegardée', 100, 'L’enregistrement, la transcription et les notes sont prêts.');
-  return { ...meeting, transcript, summary };
+  if (!window?.isFocused()) notify({ title: 'Notes de réunion prêtes', body: meeting.title, action: 'Ouvrir', onClick: () => sendToWindow('app:open-meeting', meeting.id) });
+  return { ...meeting, transcript, summary, notes: saved?.notes || '' };
 });
 ipcMain.handle('meeting:list', (_event, query, archived) => db.listMeetings(query, archived));
 ipcMain.handle('meeting:get', (_event, id) => db.getMeeting(id));
-ipcMain.handle('meeting:update', (_event, id, changes) => db.updateMeeting(id, changes));
+ipcMain.handle('meeting:update', (_event, id, changes) => { db.updateMeeting(id, changes); return syncMeetingMarkdown(id); });
+ipcMain.handle('meeting:notes', (_event, id, notes) => db.saveNotes(id, String(notes || '').slice(0, 20_000)));
 ipcMain.handle('meeting:archive', (_event, id, archived) => db.archiveMeeting(id, archived));
-ipcMain.handle('meeting:bookmark', (_event, meetingId, atTime, note) => db.addBookmark(meetingId, atTime, note));
-ipcMain.handle('meeting:delete-bookmark', (_event, id) => db.deleteBookmark(id));
+ipcMain.handle('meeting:bookmark', (_event, meetingId, atTime, note) => { db.addBookmark(meetingId, atTime, note); return syncMeetingMarkdown(meetingId).bookmarks; });
+ipcMain.handle('meeting:delete-bookmark', (_event, id) => { const meetingId = db.deleteBookmark(id); if (meetingId) syncMeetingMarkdown(meetingId); });
+ipcMain.handle('meeting:ask', async (_event, id, question) => {
+  const meeting = db.getMeeting(id), prompt = String(question || '').trim();
+  if (!meeting) throw new Error('Meeting not found');
+  if (!prompt || prompt.length > 1000) throw new Error('Question invalide');
+  if (!getKey()) throw new Error('Ajoutez une clé Synapse dans Réglages');
+  return synapse.askMeeting(meeting, prompt, getKey());
+});
 ipcMain.handle('meeting:rename-speaker', (_event, meetingId, speaker, name) => {
   if (!name?.trim()) throw new Error('A speaker name is required');
-  return db.renameSpeaker(meetingId, speaker, name.trim().slice(0, 40));
+  db.renameSpeaker(meetingId, speaker, name.trim().slice(0, 40));
+  return syncMeetingMarkdown(meetingId);
 });
 ipcMain.handle('meeting:delete', (_event, id) => {
   const folder = db.deleteMeeting(id);
@@ -283,9 +368,9 @@ ipcMain.handle('meeting:retranscribe', async (_event, id, language = 'auto') => 
   } catch (error) { console.error('Diarization failed:', error); }
   db.replaceTranscript(id, finalSegments);
   const transcript = db.getTranscript(id);
-  const summary = await synapse.summarize(transcript, getKey());
+  const summary = await synapse.summarize(transcript, getKey(), meeting.notes || '');
   db.saveSummary(id, summary);
-  return db.getMeeting(id);
+  return syncMeetingMarkdown(id);
 });
 ipcMain.handle('meeting:export', async (_event, id) => {
   const meeting = db.getMeeting(id);

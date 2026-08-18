@@ -1,7 +1,7 @@
 const api = window.callLocal;
 const $ = id => document.getElementById(id);
 let streams = [], recorders = [], videoRecorder, segmentTimers = [], currentTranscript = [];
-let recording = false, stopping = false, startedAt = 0, activeMeetingId, timer, searchTimer, lastFocused;
+let recording = false, stopping = false, startedAt = 0, activeMeetingId, timer, searchTimer, notesTimer, lastFocused;
 let liveBookmarks = [];
 let writingStream, writingRecorder, writingTimer, writingSegmentTimer, writingStartedAt = 0, activeWritingId, writingRecording = false, writingBusy = false, polishPending = false, polishAgain = false;
 let writingDraft = { verbatim: '', polished: '' }, writingVersion = 'verbatim';
@@ -84,6 +84,17 @@ function ask({ title, description, confirm = 'Confirmer', danger = false, label,
     $('actionDialog').onclose = () => { if ($('actionForm').onsubmit) finish(false); };
     $('actionDialog').showModal();
     setTimeout(() => (label ? $('actionInput') : $('actionCancel')).focus(), 0);
+  });
+}
+
+async function askMeeting(id, question, output, button) {
+  const prompt = question.trim();
+  if (!id || !prompt) return;
+  const english = window.i18n.language === 'en';
+  output.hidden = false; output.textContent = english ? 'Synapse is analyzing the meeting…' : 'Synapse analyse la réunion…';
+  await withLoading(button, english ? 'Analyzing…' : 'Analyse…', async () => {
+    try { output.textContent = await api.meeting.ask(id, prompt); }
+    catch (error) { output.textContent = `${english ? 'Answer unavailable.' : 'Réponse indisponible.'} ${error.message}`; }
   });
 }
 
@@ -171,6 +182,17 @@ function meter(stream, element) {
   };
   requestAnimationFrame(tick);
 }
+async function refreshAppSettings() {
+  try {
+    const settings = await api.app.settings();
+    $('openAtLogin').checked = settings.openAtLogin;
+    $('meetingDetection').checked = settings.meetingDetection;
+  } catch (error) { setError(`Réglages système indisponibles. ${error.message}`); }
+}
+async function saveAppSettings() {
+  try { await api.app.saveSettings({ openAtLogin: $('openAtLogin').checked, meetingDetection: $('meetingDetection').checked }); toast('Réglages de présence enregistrés'); }
+  catch (error) { toast(`Réglages indisponibles. ${error.message}`); }
+}
 async function refreshPermissions() {
   try {
     const state = await api.permissions.get();
@@ -240,7 +262,7 @@ async function start() {
       $('setup').hidden = true;
       $('live').hidden = false;
       $('stop').focus();
-      liveBookmarks = []; renderTimeline();
+      liveBookmarks = []; $('liveNotes').value = ''; $('liveAnswer').hidden = true; $('liveQuestion').value = ''; renderTimeline();
       timer = setInterval(() => { const seconds = (Date.now() - startedAt) / 1000; $('clock').textContent = formatTime(seconds); $('timelineProgress').style.transform = `scaleX(${Math.min(1, seconds / 3600)})`; }, 1000);
       toast('Réunion démarrée');
     } catch (error) {
@@ -264,6 +286,8 @@ async function stop() {
     if (videoRecorder?.state !== 'inactive') videoRecorder.stop();
     await new Promise(resolve => setTimeout(resolve, 500));
     await sending;
+    clearTimeout(notesTimer); notesTimer = null;
+    if (activeMeetingId) await api.meeting.saveNotes(activeMeetingId, $('liveNotes').value);
     streams.forEach(stream => stream.getTracks().forEach(track => track.stop()));
     streams = []; recorders = []; videoRecorder = null;
     clearInterval(timer);
@@ -436,6 +460,7 @@ async function openMeeting(id) {
       <div class="detail-timeline timeline">${meeting.bookmarks.map(bookmark => `<button class="timeline-marker" style="left:${Math.min(98, bookmark.at_time / duration * 100)}%" title="${formatTime(bookmark.at_time)} · ${escapeHtml(bookmark.note || 'Repère')}" data-scroll-time="${bookmark.at_time}" aria-label="Aller au repère ${formatTime(bookmark.at_time)}"></button>`).join('')}</div>
       <div class="metrics-strip"><span><b>${meeting.metrics.talkRatio} %</b>Votre temps de parole</span><span><b>${meeting.metrics.wordsPerMinute}</b>Mots par minute</span><span><b>${meeting.metrics.questions}</b>Questions</span><span><b>${meeting.metrics.longestMonologue} s</b>Tour le plus long</span></div>
       <div class="detail-grid"><div><section class="summary-box"><h3>Compte rendu</h3><p>${escapeHtml(meeting.summary || 'Aucun compte rendu disponible. Relancez la transcription pour réessayer.')}</p><h3>Points clés</h3><ul class="list">${list(meeting.key_points).map(point => `<li>${escapeHtml(point)}</li>`).join('') || '<li>Aucun point clé détecté.</li>'}</ul><h3>Actions</h3><ul class="list actions">${list(meeting.action_items).map((item, index) => `<li><input id="action-${index}" type="checkbox"><label for="action-${index}">${escapeHtml(item)}</label></li>`).join('') || '<li>Aucune action détectée.</li>'}</ul></section>
+        <section><h3>Demander à cette réunion</h3><form id="detailAsk" class="meeting-ask"><label for="detailQuestion"><span class="sr-only">Question</span><input id="detailQuestion" placeholder="Décisions, responsabilités, contexte…" maxlength="1000"></label><button id="detailAskButton" class="secondary" type="submit">Demander</button></form><output id="detailAnswer" class="meeting-answer" hidden></output></section>
         <label for="notesDetail">Notes<textarea id="notesDetail">${escapeHtml(meeting.notes)}</textarea></label><button id="saveNotes" class="primary">Enregistrer les notes</button><section class="bookmarks-box"><h3>Repères</h3><div id="bookmarkList">${meeting.bookmarks.map(bookmark => `<div class="bookmark"><span><time>${formatTime(bookmark.at_time)}</time>${escapeHtml(bookmark.note || 'Moment important')}</span><button class="danger icon-button" aria-label="Supprimer le repère à ${formatTime(bookmark.at_time)}" data-delete-bookmark="${bookmark.id}"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div>`).join('') || '<p>Aucun repère.</p>'}</div></section></div>
         <div><h3>Transcription</h3><div class="detail-transcript">${meeting.transcript.map(item => `<div class="line" data-at="${item.start_time}">${speakerButton(item, id)}<time>${formatTime(item.start_time)}</time><span>${escapeHtml(item.text)}</span></div>`).join('') || '<div class="empty-state compact"><strong>Aucune transcription</strong><p>Relancez la transcription à partir des fichiers audio conservés.</p></div>'}</div></div></div>`;
     $('detail').dataset.meetingId = id;
@@ -445,6 +470,7 @@ async function openMeeting(id) {
     $('favoriteDetail').onclick = async () => { await api.meeting.update(id, { title: meeting.title, notes: $('notesDetail').value, favorite: !meeting.favorite }); toast(meeting.favorite ? 'Retiré des favoris' : 'Ajouté aux favoris'); await openMeeting(id); loadHistory(); };
     $('archiveDetail').onclick = async () => { await api.meeting.archive(id, !meeting.archived); $('detail').close(); toast(meeting.archived ? 'Réunion restaurée' : 'Réunion archivée'); loadHistory(); };
     $('saveNotes').onclick = () => withLoading($('saveNotes'), 'Enregistrement…', async () => { await api.meeting.update(id, { title: meeting.title, notes: $('notesDetail').value, favorite: meeting.favorite }); toast('Notes enregistrées'); loadHistory(); });
+    $('detailAsk').onsubmit = event => { event.preventDefault(); askMeeting(id, $('detailQuestion').value, $('detailAnswer'), $('detailAskButton')); };
     $('exportDetail').onclick = async () => { await api.meeting.export(id); toast('Export Markdown créé'); };
     $('retranscribeDetail').onclick = async () => { const language = await ask({ title: 'Relancer la transcription', description: 'Utilisez « auto » ou un code de langue, par exemple fr ou en.', confirm: 'Relancer', label: 'Langue', value: 'auto' }); if (language === false) return; await withLoading($('retranscribeDetail'), 'Transcription…', async () => { try { await api.meeting.retranscribe(id, language.trim() || 'auto'); toast('Transcription terminée'); await openMeeting(id); loadHistory(); } catch (error) { toast(`Transcription impossible. ${error.message}`); } }); };
     $('folderDetail').onclick = () => api.meeting.openFolder(meeting.folder);
@@ -485,6 +511,10 @@ $('saveTranscription').onclick = () => withLoading($('saveTranscription'), 'Enre
   toast('Réglages de transcription enregistrés');
 });
 $('start').onclick = start; $('stop').onclick = stop; $('bookmarkLive').onclick = bookmarkLive;
+$('liveAsk').onsubmit = event => { event.preventDefault(); askMeeting(activeMeetingId, $('liveQuestion').value, $('liveAnswer'), event.submitter || $('liveAsk').querySelector('[type="submit"]')); };
+$('catchUp').onclick = () => { $('liveQuestion').value = window.i18n.language === 'en' ? 'Catch me up: what has been decided, what is unresolved, and what actions were assigned?' : 'Rattrape-moi : qu’a-t-on décidé, que reste-t-il à clarifier et quelles actions ont été attribuées ?'; askMeeting(activeMeetingId, $('liveQuestion').value, $('liveAnswer'), $('catchUp')); };
+$('liveNotes').oninput = () => { clearTimeout(notesTimer); notesTimer = setTimeout(() => activeMeetingId && api.meeting.saveNotes(activeMeetingId, $('liveNotes').value).catch(error => toast(`Notes non enregistrées. ${error.message}`)), 400); };
+$('openAtLogin').onchange = saveAppSettings; $('meetingDetection').onchange = saveAppSettings;
 $('dictate').onclick = toggleDictation; $('polish').onclick = () => polishWriting();
 $('verbatimTab').onclick = () => renderWriting('verbatim'); $('polishedTab').onclick = () => renderWriting('polished');
 $('writingText').oninput = () => { writingDraft[writingVersion] = $('writingText').value; renderWriting(writingVersion); if (activeWritingId) api.writing.update(activeWritingId, { [writingVersion]: writingDraft[writingVersion] }); };
@@ -500,6 +530,9 @@ api.meeting.onTranscript(renderTranscript);
 api.meeting.onProcessing(processing);
 api.meeting.onSystemLevel(db => updateMeter($('systemMeter'), $('systemValue'), (db + 60) / 60 * 100));
 api.meeting.onError(message => setError(`Erreur de capture. ${message}`));
+api.app.onMeetingToggle(() => { if (recording) stop(); else if (writingRecording) { showView('writeView'); toast('Terminez la dictée avant de démarrer une réunion'); } else { showView('recordView', false); start(); } });
+api.app.onExternalCallEnded(() => { if (recording && !stopping) { toast('L’appel semble terminé. Finalisation de la réunion…'); stop(); } });
+api.app.onOpenMeeting(id => { showView('libraryView', false); openMeeting(id); });
 api.app.onCloseRequested(async quit => {
   const confirmed = await ask({ title: 'Terminer avant de quitter ?', description: writingRecording ? 'La dictée doit être finalisée pour conserver les dernières paroles.' : 'La réunion doit être finalisée pour conserver la vidéo et les dernières paroles.', confirm: 'Terminer et quitter', danger: true });
   if (!confirmed) return;
@@ -515,5 +548,6 @@ showView('recordView', false);
 refreshKeyStatus();
 refreshTranscription();
 refreshPermissions();
+refreshAppSettings();
 loadHistory();
 loadWritings();

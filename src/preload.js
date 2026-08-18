@@ -3,6 +3,23 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('callLocal', {
   app: {
     close: quit => ipcRenderer.invoke('app:close', quit),
+    settings: () => ipcRenderer.invoke('app:settings'),
+    saveSettings: value => ipcRenderer.invoke('app:save-settings', value),
+    onMeetingToggle: callback => {
+      const listener = () => callback();
+      ipcRenderer.on('app:meeting-toggle', listener);
+      return () => ipcRenderer.removeListener('app:meeting-toggle', listener);
+    },
+    onExternalCallEnded: callback => {
+      const listener = () => callback();
+      ipcRenderer.on('app:external-call-ended', listener);
+      return () => ipcRenderer.removeListener('app:external-call-ended', listener);
+    },
+    onOpenMeeting: callback => {
+      const listener = (_event, id) => callback(id);
+      ipcRenderer.on('app:open-meeting', listener);
+      return () => ipcRenderer.removeListener('app:open-meeting', listener);
+    },
     onCloseRequested: callback => {
       const listener = (_event, quit) => callback(quit);
       ipcRenderer.on('app:close-requested', listener);
@@ -45,6 +62,8 @@ contextBridge.exposeInMainWorld('callLocal', {
     list: (query, archived) => ipcRenderer.invoke('meeting:list', query, archived),
     get: id => ipcRenderer.invoke('meeting:get', id),
     update: (id, changes) => ipcRenderer.invoke('meeting:update', id, changes),
+    saveNotes: (id, notes) => ipcRenderer.invoke('meeting:notes', id, notes),
+    ask: (id, question) => ipcRenderer.invoke('meeting:ask', id, question),
     archive: (id, archived) => ipcRenderer.invoke('meeting:archive', id, archived),
     bookmark: (id, atTime, note) => ipcRenderer.invoke('meeting:bookmark', id, atTime, note),
     deleteBookmark: id => ipcRenderer.invoke('meeting:delete-bookmark', id),

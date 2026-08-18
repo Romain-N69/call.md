@@ -127,6 +127,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .speaker-names { margin-top: 20px; padding-top: 14px; border-top: 1px solid var(--line-soft); }
 .speaker-chips, .speaker-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .speaker-chips span, .speaker-toolbar > span { color: var(--muted); font-size: 10px; }
+.channels textarea { min-height: 88px; resize: vertical; }
 .channel-actions { display: grid; margin-top: 18px; }
 .safe-copy { margin: 10px 0 0; font-size: 10px; }
 .transcript { min-height: 430px; }
@@ -151,6 +152,11 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .metrics-strip > span { min-height: 60px; padding: 10px; background: var(--surface); color: var(--muted); font-size: 9px; line-height: 1.35; }
 .metrics-strip b { display: block; margin-bottom: 3px; color: var(--ink); font-family: "Fraunces", Georgia, serif; font-size: 19px; font-weight: 500; }
 .nudge { margin: 12px 0; border-left: 2px solid var(--green); background: var(--green-soft); color: var(--green); padding: 10px 12px; font-size: 12px; }
+.meeting-ask { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 6px; margin: 12px 0; }
+.meeting-ask label { margin: 0; }
+.meeting-ask button { white-space: nowrap; }
+.meeting-answer { display: block; margin: 10px 0 16px; border-left: 2px solid var(--green); background: var(--green-soft); padding: 12px 14px; color: var(--ink); font-size: 13px; line-height: 1.6; white-space: pre-wrap; }
+.meeting-answer[hidden] { display: none; }
 
 .voice-hero { display: flex; align-items: flex-end; justify-content: space-between; gap: 30px; margin: 0 0 34px; padding: 38px 42px; background: var(--green-fill); color: var(--on-green); }
 .voice-hero::after { display: none; }
@@ -341,6 +347,8 @@ dialog::backdrop { background: rgba(26, 25, 23, .58); }
 @media (max-width: 900px) {
   main { width: min(100% - 32px, 760px); }
   .live, .detail-grid, .writing-layout { grid-template-columns: 1fr; }
+  .meeting-ask { grid-template-columns: 1fr 1fr; }
+  .meeting-ask label { grid-column: 1 / -1; }
   .writing-layout { gap: 1px; }
   .channels { padding-bottom: 10px; }
   .channel-actions { grid-template-columns: 1fr 1fr; }

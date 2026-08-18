@@ -68,6 +68,7 @@
           <div class="meter"><div><span>VOUS · MICROPHONE</span><output id="micValue">—</output></div><div class="meter-track"><b id="micMeter" role="progressbar" aria-label="Niveau du microphone" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"></b></div></div>
           <div class="meter"><div><span>INTERLOCUTEURS · SYSTÈME</span><output id="systemValue">—</output></div><div class="meter-track system"><b id="systemMeter" role="progressbar" aria-label="Niveau de l’audio système" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"></b></div></div>
           <div class="speaker-names"><small>VOIX RECONNUES</small><div id="liveSpeakers" class="speaker-chips"><span>Disponibles après analyse</span></div></div>
+          <label for="liveNotes">Notes personnelles<textarea id="liveNotes" rows="4" placeholder="Décisions, contexte, idées…"></textarea></label>
           <div class="channel-actions"><button id="stop" class="danger" type="button">Terminer la réunion</button></div>
           <p class="safe-copy">Les fichiers locaux sont finalisés avant la création du compte rendu.</p>
         </aside>
@@ -75,6 +76,8 @@
           <div class="section-title"><div><small>TRANSCRIPTION DIRECTE</small><h2 id="transcriptTitle">Conversation</h2></div><span class="rec-indicator"><i aria-hidden="true"></i>DIRECT</span></div>
           <div class="metrics-strip" aria-label="Indicateurs de conversation"><span><b id="talkRatio">0 %</b>Votre temps de parole</span><span><b id="wpm">0</b>Mots par minute</span><span><b id="questions">0</b>Questions</span><span><b id="monologue">0 s</b>Tour le plus long</span></div>
           <div id="nudge" class="nudge" hidden role="status"></div>
+          <form id="liveAsk" class="meeting-ask"><label for="liveQuestion"><span class="sr-only">Question sur la réunion</span><input id="liveQuestion" placeholder="Demander quelque chose sur la conversation…" maxlength="1000"></label><button class="secondary" type="submit">Demander</button><button id="catchUp" class="secondary" type="button">Me rattraper</button></form>
+          <output id="liveAnswer" class="meeting-answer" hidden></output>
           <div class="timeline-wrap"><div class="timeline-head"><strong>Timeline</strong><button id="bookmarkLive" class="secondary compact-button" type="button">+ Repère maintenant</button></div><div id="liveTimeline" class="timeline" role="list" aria-label="Repères de la réunion"><div class="timeline-progress" id="timelineProgress"></div></div></div>
           <div id="transcript" aria-live="polite" aria-relevant="additions"><div class="empty-state compact"><strong>En attente de paroles</strong><p>La transcription apparaîtra ici après quelques secondes.</p></div></div>
         </article>
@@ -134,6 +137,11 @@
           <label for="key">Clé Synapse<input id="key" type="password" placeholder="Coller une nouvelle clé" autocomplete="off"><span class="helper-text">Laissez ce champ vide pour conserver la clé actuelle.</span></label>
           <div class="button-row"><button id="saveKey" class="primary" type="button">Valider et enregistrer</button><button id="testKey" class="secondary" type="button">Tester la clé actuelle</button></div>
           <div id="models" class="model-info"></div>
+        </section>
+        <section class="panel settings" aria-labelledby="presenceTitle">
+          <small>PRÉSENCE</small><h2 id="presenceTitle">Assistant de réunion</h2><p>Reste disponible dans la barre des menus et propose de prendre des notes sans jamais enregistrer automatiquement.</p>
+          <label class="switch-row"><input id="openAtLogin" type="checkbox"><span><strong>Ouvrir à la connexion</strong><small>Lance discrètement Synapse Call Local avec votre session macOS.</small></span></label>
+          <label class="switch-row"><input id="meetingDetection" type="checkbox"><span><strong>Détecter les appels</strong><small>Observe uniquement quels processus utilisent le microphone, jamais son contenu.</small></span></label>
         </section>
       </div>
     </section>

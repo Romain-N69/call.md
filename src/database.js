@@ -96,6 +96,10 @@ function openDatabase(path) {
         .run(changes.title, changes.notes || '', changes.favorite ? 1 : 0, id);
       return this.getMeeting(id);
     },
+    saveNotes(id, notes) {
+      db.prepare('UPDATE meetings SET notes=? WHERE id=?').run(notes, id);
+      return this.getMeeting(id);
+    },
     archiveMeeting(id, archived) {
       db.prepare('UPDATE meetings SET archived=? WHERE id=?').run(archived ? 1 : 0, id);
       return this.getMeeting(id);
@@ -104,7 +108,11 @@ function openDatabase(path) {
       db.prepare('INSERT INTO bookmarks (meeting_id,at_time,note) VALUES (?,?,?)').run(meetingId, atTime, note || '');
       return this.getMeeting(meetingId).bookmarks;
     },
-    deleteBookmark(id) { db.prepare('DELETE FROM bookmarks WHERE id=?').run(id); },
+    deleteBookmark(id) {
+      const bookmark = db.prepare('SELECT meeting_id FROM bookmarks WHERE id=?').get(id);
+      db.prepare('DELETE FROM bookmarks WHERE id=?').run(id);
+      return bookmark?.meeting_id;
+    },
     renameSpeaker(meetingId, speaker, name) {
       db.prepare('UPDATE transcript_segments SET speaker=? WHERE meeting_id=? AND speaker=?').run(name, meetingId, speaker);
       return this.getMeeting(meetingId);
