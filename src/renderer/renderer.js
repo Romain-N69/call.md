@@ -38,7 +38,12 @@ function escapeHtml(value = '') {
   return div.innerHTML;
 }
 function list(value) { return Array.isArray(value) ? value : []; }
-function dateLabel(value) { return new Intl.DateTimeFormat('fr-FR', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value)); }
+function dateLabel(value) { return new Intl.DateTimeFormat(window.i18n.locale(), { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value)); }
+function defaultWritingTitle() { return window.i18n.language === 'en' ? 'New voice document' : 'Nouveau texte vocal'; }
+function localizeDefaultTitles() {
+  if (['Réunion sans titre', 'Untitled meeting'].includes($('title').value)) $('title').value = window.i18n.language === 'en' ? 'Untitled meeting' : 'Réunion sans titre';
+  if (['Nouveau texte vocal', 'New voice document'].includes($('writingTitle').value)) $('writingTitle').value = defaultWritingTitle();
+}
 function durationLabel(start, end) {
   if (!end) return 'Durée inconnue';
   const minutes = Math.max(1, Math.round((end - start) / 60000));
@@ -386,7 +391,7 @@ async function openWriting(id) {
   document.querySelector(`input[name="writingFormat"][value="${item.format}"]`).checked = true; renderWriting(item.polished ? 'polished' : 'verbatim'); writingStatus(item.polished ? 'Texte corrigé' : 'Brouillon prêt');
 }
 function newWriting() {
-  activeWritingId = null; writingStartedAt = 0; writingDraft = { verbatim: '', polished: '' }; $('writingTitle').value = 'Nouveau texte vocal'; $('writingClock').textContent = '00:00'; $('writingLanguageLock').textContent = 'Langue automatique'; renderWriting('verbatim'); writingStatus('Prêt');
+  activeWritingId = null; writingStartedAt = 0; writingDraft = { verbatim: '', polished: '' }; $('writingTitle').value = defaultWritingTitle(); $('writingClock').textContent = '00:00'; $('writingLanguageLock').textContent = 'Langue automatique'; renderWriting('verbatim'); writingStatus('Prêt');
 }
 const libraryIcons = {
   edit: '<svg aria-hidden="true" viewBox="0 0 24 24"><path d="m4 16-.8 4 4-.8L18 8.4 15.6 6 4 16zM14 7.5l2.5 2.5"/></svg>',
@@ -395,7 +400,7 @@ const libraryIcons = {
   delete: '<svg aria-hidden="true" viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M7 7l1 13h8l1-13M10 11v5M14 11v5"/></svg>',
 };
 async function editMeetingQuick(meeting) {
-  const title = await ask({ title: 'Modifier la réunion', description: 'Changez son titre. La transcription et les fichiers restent inchangés.', confirm: 'Enregistrer', label: 'Titre', value: meeting.title });
+  const title = await ask({ title: 'Modifier la réunion', description: 'Changez son titre. La transcription et les fichiers restent inchangés.', confirm: 'Sauvegarder', label: 'Titre', value: meeting.title });
   if (!title?.trim() || title.trim() === meeting.title) return;
   await api.meeting.update(meeting.id, { title: title.trim().slice(0, 120), notes: meeting.notes, favorite: meeting.favorite }); toast('Titre modifié'); loadHistory();
 }
@@ -432,9 +437,10 @@ async function openMeeting(id) {
       <div class="detail-grid"><div><section class="summary-box"><h3>Compte rendu</h3><p>${escapeHtml(meeting.summary || 'Aucun compte rendu disponible. Relancez la transcription pour réessayer.')}</p><h3>Points clés</h3><ul class="list">${list(meeting.key_points).map(point => `<li>${escapeHtml(point)}</li>`).join('') || '<li>Aucun point clé détecté.</li>'}</ul><h3>Actions</h3><ul class="list actions">${list(meeting.action_items).map((item, index) => `<li><input id="action-${index}" type="checkbox"><label for="action-${index}">${escapeHtml(item)}</label></li>`).join('') || '<li>Aucune action détectée.</li>'}</ul></section>
         <label for="notesDetail">Notes<textarea id="notesDetail">${escapeHtml(meeting.notes)}</textarea></label><button id="saveNotes" class="primary">Enregistrer les notes</button><section class="bookmarks-box"><h3>Repères</h3><div id="bookmarkList">${meeting.bookmarks.map(bookmark => `<div class="bookmark"><span><time>${formatTime(bookmark.at_time)}</time>${escapeHtml(bookmark.note || 'Moment important')}</span><button class="danger icon-button" aria-label="Supprimer le repère à ${formatTime(bookmark.at_time)}" data-delete-bookmark="${bookmark.id}"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div>`).join('') || '<p>Aucun repère.</p>'}</div></section></div>
         <div><h3>Transcription</h3><div class="detail-transcript">${meeting.transcript.map(item => `<div class="line" data-at="${item.start_time}">${speakerButton(item, id)}<time>${formatTime(item.start_time)}</time><span>${escapeHtml(item.text)}</span></div>`).join('') || '<div class="empty-state compact"><strong>Aucune transcription</strong><p>Relancez la transcription à partir des fichiers audio conservés.</p></div>'}</div></div></div>`;
+    $('detail').dataset.meetingId = id;
     if (!$('detail').open) $('detail').showModal();
     $('detailTitle').focus();
-    $('editDetail').onclick = async () => { const title = await ask({ title: 'Modifier la réunion', description: 'Changez son titre.', confirm: 'Enregistrer', label: 'Titre', value: meeting.title }); if (!title?.trim() || title.trim() === meeting.title) return; await api.meeting.update(id, { title: title.trim().slice(0, 120), notes: $('notesDetail').value, favorite: meeting.favorite }); toast('Titre modifié'); await openMeeting(id); loadHistory(); };
+    $('editDetail').onclick = async () => { const title = await ask({ title: 'Modifier la réunion', description: 'Changez son titre.', confirm: 'Sauvegarder', label: 'Titre', value: meeting.title }); if (!title?.trim() || title.trim() === meeting.title) return; await api.meeting.update(id, { title: title.trim().slice(0, 120), notes: $('notesDetail').value, favorite: meeting.favorite }); toast('Titre modifié'); await openMeeting(id); loadHistory(); };
     $('favoriteDetail').onclick = async () => { await api.meeting.update(id, { title: meeting.title, notes: $('notesDetail').value, favorite: !meeting.favorite }); toast(meeting.favorite ? 'Retiré des favoris' : 'Ajouté aux favoris'); await openMeeting(id); loadHistory(); };
     $('archiveDetail').onclick = async () => { await api.meeting.archive(id, !meeting.archived); $('detail').close(); toast(meeting.archived ? 'Réunion restaurée' : 'Réunion archivée'); loadHistory(); };
     $('saveNotes').onclick = () => withLoading($('saveNotes'), 'Enregistrement…', async () => { await api.meeting.update(id, { title: meeting.title, notes: $('notesDetail').value, favorite: meeting.favorite }); toast('Notes enregistrées'); loadHistory(); });
@@ -487,6 +493,8 @@ $('clearWriting').onclick = async () => { if (writingRecording) return; if ((wri
 $('styleExample').oninput = persistStyle;
 $('search').oninput = () => { clearTimeout(searchTimer); searchTimer = setTimeout(loadHistory, 180); };
 $('libraryScope').onchange = loadHistory;
+document.querySelectorAll('[data-ui-language]').forEach(button => button.onclick = () => window.i18n.setLanguage(button.dataset.uiLanguage));
+window.addEventListener('app-language', () => { localizeDefaultTitles(); loadHistory(); loadWritings(); window.i18n.apply(); });
 api.meeting.onTranscript(renderTranscript);
 api.meeting.onProcessing(processing);
 api.meeting.onSystemLevel(db => updateMeter($('systemMeter'), $('systemValue'), (db + 60) / 60 * 100));
@@ -501,6 +509,7 @@ $('detail').addEventListener('close', () => lastFocused?.focus());
 document.addEventListener('keydown', event => { if (event.metaKey && event.key === '1') { event.preventDefault(); showView('recordView'); } if (event.metaKey && event.key === '2') { event.preventDefault(); showView('writeView'); } if (event.metaKey && event.key === '3') { event.preventDefault(); showView('libraryView'); } if (event.metaKey && event.key.toLowerCase() === 'd' && !['INPUT','TEXTAREA'].includes(document.activeElement.tagName)) { event.preventDefault(); showView('writeView', false); toggleDictation(); } if (event.metaKey && event.key === ',') { event.preventDefault(); showView('settingsView'); } });
 
 try { const saved = JSON.parse(localStorage.getItem('writing-options') || '{}'); $('styleExample').value = localStorage.getItem('writing-style-example') || ''; ['writingLanguage','writingTarget','writingTone','writingIntensity'].forEach(id => { const key = { writingLanguage: 'sourceLanguage', writingTarget: 'targetLanguage', writingTone: 'tone', writingIntensity: 'intensity' }[id]; if (saved[key] && [...$(id).options].some(option => option.value === saved[key])) $(id).value = saved[key]; }); if (saved.format) document.querySelector(`input[name="writingFormat"][value="${saved.format}"]`)?.click(); } catch {}
+localizeDefaultTitles();
 showView('recordView', false);
 refreshKeyStatus();
 refreshTranscription();

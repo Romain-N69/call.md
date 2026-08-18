@@ -80,6 +80,7 @@ async function createWindow() {
     window.webContents.send('app:close-requested', false);
   });
   await window.loadFile(path.join(__dirname, 'renderer', 'index.html'));
+  window.webContents.setZoomFactor(0.85);
 }
 
 app.whenReady().then(async () => {

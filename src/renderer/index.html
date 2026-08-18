@@ -21,7 +21,7 @@
         <span class="brand-mark" aria-hidden="true"><i></i><i></i></span>
         <div><h1>Synapse Call <em>Local</em></h1><p>Intelligence de réunion privée</p></div>
       </div>
-      <div class="clock-wrap"><small>DURÉE</small><output id="clock" aria-live="off">00:00</output></div>
+      <div class="header-tools"><div class="language-switch" role="group" aria-label="Langue de l’interface"><button type="button" data-ui-language="fr" aria-pressed="true">FR</button><button type="button" data-ui-language="en" aria-pressed="false">EN</button></div><div class="clock-wrap"><small>DURÉE</small><output id="clock" aria-live="off">00:00</output></div></div>
     </header>
 
     <nav class="tabs" aria-label="Sections de l’application" role="tablist">
@@ -149,6 +149,7 @@
   <div id="toast" class="toast" hidden role="status" aria-live="polite"></div>
   <dialog id="actionDialog" class="action-dialog" aria-labelledby="actionTitle" aria-describedby="actionDescription"><form id="actionForm"><h2 id="actionTitle">Confirmer</h2><p id="actionDescription"></p><div id="actionField"></div><div class="button-row end"><button id="actionCancel" class="secondary" type="button">Annuler</button><button id="actionConfirm" class="primary" type="submit">Confirmer</button></div></form></dialog>
   <dialog id="detail" aria-labelledby="detailTitle"><form method="dialog"><button class="close icon-button" aria-label="Fermer"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></svg></button></form><div id="detailBody"></div></dialog>
+  <script src="./i18n.js"></script>
   <script src="./renderer.js"></script>
 </body>
 </html>
