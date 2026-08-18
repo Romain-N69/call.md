@@ -19,6 +19,17 @@ function similarText(first, second) {
 function mergeOverlappingSegments(segments) {
   return [...segments].sort((a, b) => a.start_time - b.start_time).filter((segment, index, all) => !all.slice(0, index).some(previous => previous.channel === segment.channel && Math.abs(previous.start_time - segment.start_time) < 1.5 && similarText(previous.text, segment.text)));
 }
+function mergeSpeakerTurns(segments, maxGap = 1.5) {
+  const merged = [];
+  for (const segment of [...segments].sort((a, b) => a.start_time - b.start_time)) {
+    const previous = merged.at(-1), sameVoice = previous?.channel === segment.channel && (previous.speaker || '') === (segment.speaker || '');
+    if (sameVoice && segment.start_time - previous.end_time <= maxGap && segment.start_time - previous.start_time <= 45) {
+      previous.end_time = Math.max(previous.end_time, segment.end_time);
+      previous.text = `${previous.text} ${segment.text}`.replace(/\s+/g, ' ').trim();
+    } else merged.push({ ...segment });
+  }
+  return merged;
+}
 function suppressCrosstalk(segments, windowSeconds = 2.5) {
   return segments.filter(segment => segment.channel !== 'me' || !segments.some(other => other.channel === 'them' && Math.abs(other.start_time - segment.start_time) <= windowSeconds && similarText(segment.text, other.text)));
 }
@@ -58,4 +69,4 @@ async function finalizeVideo(file) {
   } catch (error) { fs.rmSync(fixed, { force: true }); throw error; }
 }
 
-module.exports = { finalizeMicrophone, finalizeVideo, isSystemAudioLeak, mergeOverlappingSegments, nearestSystemChunk, similarText, suppressCrosstalk };
+module.exports = { finalizeMicrophone, finalizeVideo, isSystemAudioLeak, mergeOverlappingSegments, mergeSpeakerTurns, nearestSystemChunk, similarText, suppressCrosstalk };

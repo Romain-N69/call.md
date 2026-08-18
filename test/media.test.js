@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { mergeOverlappingSegments, similarText, suppressCrosstalk } = require('../src/media');
+const { mergeOverlappingSegments, mergeSpeakerTurns, similarText, suppressCrosstalk } = require('../src/media');
 
 test('detects equivalent text across microphone and system channels', () => {
   assert.equal(similarText('Bonjour, comment allez-vous ?', 'Bonjour comment allez vous'), true);
@@ -20,4 +20,13 @@ test('keeps the system copy when both channels transcribe the same speech', () =
   ]);
   assert.deepEqual(segments.map(segment => segment.channel), ['them', 'me']);
   assert.equal(segments[1].text, 'Je prends la validation finale.');
+});
+
+test('groups adjacent segments from the same speaker into readable turns', () => {
+  const result = mergeSpeakerTurns([
+    { channel: 'them', speaker: 'Alex', start_time: 1, end_time: 3, text: 'First sentence.' },
+    { channel: 'them', speaker: 'Alex', start_time: 3.4, end_time: 5, text: 'Second sentence.' },
+    { channel: 'them', speaker: 'Sam', start_time: 5.2, end_time: 6, text: 'Reply.' },
+  ]);
+  assert.deepEqual(result.map(segment => segment.text), ['First sentence. Second sentence.', 'Reply.']);
 });

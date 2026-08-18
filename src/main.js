@@ -6,7 +6,7 @@ const { openDatabase } = require('./database');
 const keychain = require('./keychain');
 const { startSystemAudio } = require('./system-audio');
 const { markdown } = require('./insights');
-const { finalizeMicrophone, finalizeVideo, isSystemAudioLeak, mergeOverlappingSegments, nearestSystemChunk, suppressCrosstalk } = require('./media');
+const { finalizeMicrophone, finalizeVideo, isSystemAudioLeak, mergeOverlappingSegments, mergeSpeakerTurns, nearestSystemChunk, suppressCrosstalk } = require('./media');
 const { cleanSegments, parakeetState, parakeetTranscribe, whisperTranscribe, modelState, selectedModel, MODELS } = require('./transcription');
 const { normalizeWritingOptions, polishInstructions, splitText, writingStats } = require('./writing');
 const { startMeetingDetection } = require('./meeting-detection');
@@ -282,19 +282,19 @@ ipcMain.handle('meeting:stop', async () => {
   const systemFile = path.join(meeting.folder, 'system-full.wav'), microphone = await finalizeMicrophone(meeting.folder);
   const [finalMic, diarized] = await Promise.all([
     microphone ? transcribe(microphone.path, meeting.language, meeting.vocabulary, true).catch(error => { console.error('Final microphone transcription failed:', error); return []; }) : [],
-    synapse.diarize(systemFile, getKey(), meeting.language).catch(error => { console.error('Diarization failed:', error); return []; }),
+    synapse.diarize(systemFile, getKey(), meeting.language, ({ completed, total }) => progress('Analyse des intervenants', 68 + Math.round(completed / total * 16), `Bloc audio ${completed}/${total} analysé…`)).catch(error => { console.error('Diarization failed:', error); return []; }),
   ]);
   if (finalMic.length) {
     const offset = Math.max(0, (microphone.startedAt - meeting.startedAt) / 1000);
     transcript = [...transcript.filter(segment => segment.channel !== 'me'), ...finalMic.map(segment => ({ channel: 'me', start_time: offset + segment.start, end_time: offset + segment.end, text: segment.text }))].sort((a, b) => a.start_time - b.start_time);
   }
-  progress('Analyse des intervenants', 75, 'Séparation des voix distantes…');
+  progress('Analyse des intervenants', 85, 'Séparation des voix distantes terminée.');
   if (diarized.length) {
     const speakers = [...new Set(diarized.map(segment => segment.speaker))];
     const names = Object.fromEntries(speakers.map((speaker, index) => [speaker, `Intervenant ${index + 1}`]));
     transcript = [...transcript.filter(segment => segment.channel === 'me'), ...diarized.map(segment => ({ channel: 'them', start_time: segment.start, end_time: segment.end, text: segment.text, speaker: names[segment.speaker] }))].sort((a, b) => a.start_time - b.start_time);
   }
-  transcript = suppressCrosstalk(mergeOverlappingSegments(transcript));
+  transcript = mergeSpeakerTurns(suppressCrosstalk(mergeOverlappingSegments(transcript)));
   db.replaceTranscript(meeting.id, transcript);
   transcript = db.getTranscript(meeting.id);
   let summary = null;
@@ -340,32 +340,22 @@ ipcMain.handle('meeting:delete', (_event, id) => {
 ipcMain.handle('meeting:retranscribe', async (_event, id, language = 'auto') => {
   const meeting = db.getMeeting(id);
   if (!meeting) throw new Error('Meeting not found');
-  const files = fs.readdirSync(meeting.folder).filter(file => /^(mic-|system-\d).+\.(webm|wav)$/.test(file)).sort();
-  if (!files.length) throw new Error('No source audio files were found');
-  const segments = [];
-  const microphone = await finalizeMicrophone(meeting.folder);
-  if (microphone) {
-    const finalMic = await transcribe(microphone.path, language, '', true);
-    const offset = Math.max(0, (microphone.startedAt - meeting.started_at) / 1000);
-    finalMic.forEach(item => segments.push({ channel: 'me', start_time: offset + item.start, end_time: offset + item.end, text: item.text }));
-  }
-  for (const file of files) {
-    const match = file.match(/^(mic|system(?:_audio)?)-(\d+)/);
-    if (!match) continue;
-    const startedAt = Number(match[2]), channel = match[1] === 'mic' ? 'me' : 'them';
-    if (channel === 'me') continue;
-    const source = path.join(meeting.folder, file);
-    const transcript = await transcribe(source, language);
-    const offset = Math.max(0, (startedAt - meeting.started_at) / 1000);
-    transcript.forEach(item => segments.push({ channel, start_time: offset + Number(item.start || 0), end_time: offset + Number(item.end || item.start || 0), text: item.text || '' }));
-  }
-  let finalSegments = suppressCrosstalk(segments.sort((a, b) => a.start_time - b.start_time));
-  try {
-    const diarized = await synapse.diarize(path.join(meeting.folder, 'system-full.wav'), getKey(), language);
-    const speakers = [...new Set(diarized.map(segment => segment.speaker))];
-    const names = Object.fromEntries(speakers.map((speaker, index) => [speaker, `Intervenant ${index + 1}`]));
-    finalSegments = [...finalSegments.filter(segment => segment.channel === 'me'), ...diarized.map(segment => ({ channel: 'them', start_time: segment.start, end_time: segment.end, text: segment.text, speaker: names[segment.speaker] }))].sort((a, b) => a.start_time - b.start_time);
-  } catch (error) { console.error('Diarization failed:', error); }
+  const systemFile = path.join(meeting.folder, 'system-full.wav'), microphone = await finalizeMicrophone(meeting.folder);
+  if (!microphone && !fs.existsSync(systemFile)) throw new Error('No source audio files were found');
+  const [finalMic, diarized] = await Promise.all([
+    microphone ? transcribe(microphone.path, language, '', true) : [],
+    fs.existsSync(systemFile) ? synapse.diarize(systemFile, getKey(), language).catch(error => { console.error('Diarization failed:', error); return []; }) : [],
+  ]);
+  const offset = microphone ? Math.max(0, (microphone.startedAt - meeting.started_at) / 1000) : 0;
+  let remote = diarized;
+  if (!remote.length && fs.existsSync(systemFile)) remote = (await transcribe(systemFile, language, '', true)).map(segment => ({ ...segment, speaker: null }));
+  const speakers = [...new Set(remote.map(segment => segment.speaker).filter(Boolean))];
+  const names = Object.fromEntries(speakers.map((speaker, index) => [speaker, `Intervenant ${index + 1}`]));
+  let finalSegments = [
+    ...finalMic.map(segment => ({ channel: 'me', start_time: offset + segment.start, end_time: offset + segment.end, text: segment.text })),
+    ...remote.map(segment => ({ channel: 'them', start_time: segment.start, end_time: segment.end, text: segment.text, speaker: names[segment.speaker] || null })),
+  ].sort((a, b) => a.start_time - b.start_time);
+  finalSegments = mergeSpeakerTurns(suppressCrosstalk(mergeOverlappingSegments(finalSegments)));
   db.replaceTranscript(id, finalSegments);
   const transcript = db.getTranscript(id);
   const summary = await synapse.summarize(transcript, getKey(), meeting.notes || '');
