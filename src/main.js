@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog, ipcMain, session, shell, systemPreferences } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain, nativeTheme, session, shell, systemPreferences } = require('electron');
 const { randomUUID } = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -11,6 +11,7 @@ const { cleanSegments, parakeetState, parakeetTranscribe, whisperTranscribe, mod
 const { normalizeWritingOptions, polishInstructions, splitText, writingStats } = require('./writing');
 const synapse = require('./synapse');
 
+if (process.argv.includes('--force-dark-mode')) nativeTheme.themeSource = 'dark';
 let window;
 let db;
 let activeMeeting;
@@ -71,7 +72,7 @@ async function createWindow() {
     minHeight: 520,
     titleBarStyle: 'hiddenInset',
     trafficLightPosition: { x: 18, y: 18 },
-    backgroundColor: '#f4f0e8',
+    backgroundColor: nativeTheme.shouldUseDarkColors ? '#141916' : '#f4f0e8',
     webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false },
   });
   window.on('close', event => {
