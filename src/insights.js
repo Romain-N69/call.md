@@ -1,8 +1,20 @@
+function normalizeDurations(transcript) {
+  return transcript.map((segment, index) => {
+    const start = Number(segment.start_time) || 0, end = Number(segment.end_time) || 0;
+    if (end > start) return segment;
+    const next = transcript.slice(index + 1).find(item => Number(item.start_time) > start);
+    const words = (segment.text.match(/\S+/g) || []).length;
+    // ponytail: infer missing ASR duration from the next timestamp; remove when every provider returns segment ends.
+    const duration = next ? Math.min(15, Number(next.start_time) - start) : Math.min(10, Math.max(1, words / 2.5));
+    return { ...segment, start_time: start, end_time: start + duration };
+  });
+}
+
 function metrics(transcript) {
   const channels = { me: { seconds: 0, words: 0 }, them: { seconds: 0, words: 0 } };
   let questions = 0;
   let longestMonologue = 0;
-  for (const segment of transcript) {
+  for (const segment of normalizeDurations(transcript)) {
     const channel = channels[segment.channel];
     if (!channel) continue;
     const duration = Math.max(0, Number(segment.end_time) - Number(segment.start_time));
@@ -49,4 +61,4 @@ function formatTime(seconds) {
   return `${String(Math.floor(value / 60)).padStart(2, '0')}:${String(value % 60).padStart(2, '0')}`;
 }
 
-module.exports = { metrics, markdown, parseList, formatTime };
+module.exports = { metrics, normalizeDurations, markdown, parseList, formatTime };

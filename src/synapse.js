@@ -40,7 +40,7 @@ async function transcribe(path, apiKey, options = {}) {
 }
 
 function speakerSegments(result) {
-  return (result.segments || []).map(segment => ({ start: Number(segment.start || 0), end: Number(segment.end || segment.start || 0), text: segment.text || '', speaker: segment.speaker || 'speaker_0' }));
+  return (result.segments || []).map(segment => ({ start: Number(segment.start ?? segment.start_time ?? 0), end: Number(segment.end ?? segment.end_time ?? segment.start ?? segment.start_time ?? 0), text: segment.text || '', speaker: segment.speaker || 'speaker_0' }));
 }
 async function diarize(path, apiKey, language = 'auto') {
   const compressed = `${path}.diarize.mp3`;

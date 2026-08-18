@@ -1,5 +1,5 @@
 const Database = require('better-sqlite3');
-const { metrics, parseList } = require('./insights');
+const { metrics, normalizeDurations, parseList } = require('./insights');
 
 function openDatabase(path) {
   const db = new Database(path);
@@ -80,8 +80,8 @@ function openDatabase(path) {
       };
     },
     getTranscript(meetingId) {
-      return db.prepare(`SELECT channel,start_time,end_time,text,speaker
-        FROM transcript_segments WHERE meeting_id=? ORDER BY start_time`).all(meetingId);
+      return normalizeDurations(db.prepare(`SELECT channel,start_time,end_time,text,speaker
+        FROM transcript_segments WHERE meeting_id=? ORDER BY start_time`).all(meetingId));
     },
     replaceTranscript(meetingId, segments) {
       db.transaction(() => {

@@ -17,7 +17,7 @@ function cleanSegments(segments) {
   return segments.filter(segment => {
     const text = String(segment.text || '').trim();
     return text.length > 2 && !noise.test(text) && !promotional.test(text) && !(segment.expectedLatin && unsupportedScript.test(text)) && Number(segment.no_speech_prob || 0) < 0.55 && Number(segment.avg_logprob ?? 0) > -1.2;
-  }).map(segment => ({ start: Number(segment.start || segment.offsets?.from || 0) / (segment.offsets ? 1000 : 1), end: Number(segment.end || segment.offsets?.to || 0) / (segment.offsets ? 1000 : 1), text: String(segment.text).trim() }));
+  }).map(segment => ({ start: Number(segment.start ?? segment.start_time ?? segment.offsets?.from ?? 0) / (segment.offsets ? 1000 : 1), end: Number(segment.end ?? segment.end_time ?? segment.offsets?.to ?? 0) / (segment.offsets ? 1000 : 1), text: String(segment.text).trim() }));
 }
 
 async function whisperTranscribe(input, { modelPath, language = 'auto', whisperBinary = '/opt/homebrew/bin/whisper-cli', ffmpegBinary = '/opt/homebrew/bin/ffmpeg' }) {

@@ -11,6 +11,19 @@ test('computes meeting metrics', () => {
   assert.deepEqual(metrics(transcript), { talkRatio: 33, wordsPerMinute: 10, questions: 1, longestMonologue: 60 });
 });
 
+test('infers duration when transcription segments only have start timestamps', () => {
+  const startOnly = [
+    { channel: 'me', start_time: 0, end_time: 0, text: 'Can we ship Friday?' },
+    { channel: 'them', start_time: 4, end_time: 4, text: 'Yes, that works.' },
+    { channel: 'me', start_time: 8, end_time: 8, text: 'I will prepare it.' },
+  ];
+  const result = metrics(startOnly);
+  assert.equal(result.questions, 1);
+  assert.ok(result.talkRatio > 0);
+  assert.ok(result.wordsPerMinute > 0);
+  assert.ok(result.longestMonologue > 0);
+});
+
 test('exports complete markdown', () => {
   const output = markdown({ title: 'Launch', started_at: 0, summary: 'Ready.', key_points: '["Friday"]', action_items: '["Ship"]' }, transcript, [{ at_time: 12, note: 'Decision' }]);
   assert.match(output, /# Launch/);
