@@ -71,7 +71,7 @@ async function createWindow() {
     minHeight: 520,
     titleBarStyle: 'hiddenInset',
     trafficLightPosition: { x: 18, y: 18 },
-    backgroundColor: '#dce8ec',
+    backgroundColor: '#f4f0e8',
     webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false },
   });
   window.on('close', event => {

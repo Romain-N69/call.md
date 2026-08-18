@@ -102,8 +102,9 @@ function calculateMetrics(items) {
   return { talkRatio: total ? Math.round(values.me.seconds / total * 100) : 0, wpm: values.me.seconds ? Math.round(values.me.words / values.me.seconds * 60) : 0, questions, longest: Math.round(longest) };
 }
 function speakerButton(item, meetingId = '') {
-  const name = item.channel === 'me' ? 'VOUS' : item.speaker || 'EUX';
-  return item.channel === 'me' || name === 'EUX' ? `<b class="speaker ${item.channel}">${escapeHtml(name)}</b>` : `<button class="speaker ${item.channel}" data-speaker="${escapeHtml(name)}" data-meeting="${meetingId}" title="Renommer ${escapeHtml(name)}">${escapeHtml(name)}</button>`;
+  const name = item.channel === 'me' ? 'VOUS' : item.speaker || 'EUX', english = window.i18n.language === 'en';
+  const label = item.channel === 'me' ? (english ? 'YOU' : 'VOUS') : !item.speaker ? (english ? 'THEM' : 'EUX') : english && /^Intervenant \d+$/.test(name) ? name.replace('Intervenant', 'Speaker') : name;
+  return item.channel === 'me' || !item.speaker ? `<b class="speaker ${item.channel}">${escapeHtml(label)}</b>` : `<button class="speaker ${item.channel}" data-speaker="${escapeHtml(name)}" data-meeting="${meetingId}" title="Renommer ${escapeHtml(name)}">${escapeHtml(label)}</button>`;
 }
 function renderTranscript(items) {
   const container = $('transcript'), appendOnly = items.length >= currentTranscript.length && currentTranscript.every((item, index) => item.start_time === items[index]?.start_time && item.text === items[index]?.text);
